@@ -250,14 +250,6 @@ Frontend (`frontend/.env`):
 
 After running `python manage.py seed_data`, you can log in with:
 
-| Username | Email | Password |
-|----------|-------|----------|
-| ademola_dev | ademola@unilag.edu.ng | password123 |
-| chioma_designs | chioma@oau.edu.ng | password123 |
-| tunde_writes | tunde@ui.edu.ng | password123 |
-| fatima_apps | fatima@abu.edu.ng | password123 |
-| sarah_client | sarah@gmail.com | password123 |
-
 ## Deployment
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for the full production checklist (secrets, CORS, security headers, static/media hosting, CI/CD, and monitoring). Summary:
