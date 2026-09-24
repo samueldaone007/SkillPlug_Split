@@ -171,12 +171,6 @@ python manage.py test apps.api   # or: pytest
 | `SECRET_KEY` | Django secret key | (required in production) |
 | `ALLOWED_HOSTS` | Comma-separated allowed hosts | `localhost,127.0.0.1` |
 | `FRONTEND_URL` | Deployed frontend URL (password-reset links) | `http://localhost:5173` |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated origins allowed via CORS | `http://localhost:5173,http://127.0.0.1:5173` |
-| `DB_NAME` | PostgreSQL database name | `skillplug` |
-| `DB_USER` | PostgreSQL username | `postgres` |
-| `DB_PASSWORD` | PostgreSQL password | `postgres` |
-| `DB_HOST` | PostgreSQL host | `localhost` |
-| `DB_PORT` | PostgreSQL port | `5432` |
 | `EMAIL_BACKEND` | Email backend (`console` in dev, `smtp` in prod) | `console` (when DEBUG) |
 | `EMAIL_HOST_USER` | SMTP email | (optional) |
 | `EMAIL_HOST_PASSWORD` | SMTP password | (optional) |
