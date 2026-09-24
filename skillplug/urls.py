@@ -13,6 +13,9 @@ urlpatterns = [
     # Admin
     path("admin/", admin.site.urls),
     
+    # REST API
+    path("api/v1/", include("apps.api.urls")),
+    
     # Home
     path("", HomeView.as_view(), name="home"),
     

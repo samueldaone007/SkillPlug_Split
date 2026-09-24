@@ -5,6 +5,8 @@ Django settings for production and development environments.
  
 from pathlib import Path
 from decouple import config
+from datetime import timedelta
+from django.core.exceptions import ImproperlyConfigured
 import os
  
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -15,8 +17,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # CORE SETTINGS
 # =============================================================================
  
-SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-me-in-production")
- 
+# SECRET_KEY is required in production. Fail fast instead of shipping with a
+# known placeholder secret.
+SECRET_KEY = config("SECRET_KEY", default="")
+
+if not SECRET_KEY:
+    if config("DEBUG", default=True, cast=bool):
+        # Convenience default for local dev only.
+        SECRET_KEY = "django-insecure-change-me-in-production"
+    else:
+        raise ImproperlyConfigured(
+            "SECRET_KEY must be set via the environment (or .env) when DEBUG=False."
+        )
+
 DEBUG = config("DEBUG", default=True, cast=bool)
  
 ALLOWED_HOSTS = config(
@@ -53,6 +66,10 @@ INSTALLED_APPS = [
     "allauth.account",
     "allauth.socialaccount",
     "django_htmx",
+    "rest_framework",
+    "rest_framework_simplejwt",
+    "corsheaders",
+    "django_filters",
     
     # Local apps
     "apps.accounts",
@@ -64,6 +81,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -72,6 +90,7 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
+    "skillplug.middleware.SecurityHeadersMiddleware",
 ]
  
 ROOT_URLCONF = "skillplug.urls"
@@ -100,11 +119,19 @@ ASGI_APPLICATION = "skillplug.asgi.application"
 # =============================================================================
 # DATABASE
 # =============================================================================
- 
+
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": config("DB_NAME", default="skillplug"),
+        "USER": config("DB_USER", default="postgres"),
+        "PASSWORD": config("DB_PASSWORD", default="postgres"),
+        "HOST": config("DB_HOST", default="localhost"),
+        "PORT": config("DB_PORT", default="5432", cast=int),
+        "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=60, cast=int),
+        "OPTIONS": {
+            "connect_timeout": 10,
+        },
     }
 }
  
@@ -226,8 +253,11 @@ if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
  
  
 # =============================================================================
@@ -245,3 +275,67 @@ WHATSAPP_DEFAULT_MESSAGE = config(
     "WHATSAPP_DEFAULT_MESSAGE",
     default="Hello! I found you on SkillPlug and I'm interested in your services.",
 )
+
+
+# =============================================================================
+# REST FRAMEWORK
+# =============================================================================
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticatedOrReadOnly",
+    ),
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 12,
+    "DEFAULT_FILTER_BACKENDS": (
+        "django_filters.rest_framework.DjangoFilterBackend",
+        "rest_framework.filters.SearchFilter",
+        "rest_framework.filters.OrderingFilter",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "100/hour",
+        "user": "1000/hour",
+        "login": "10/hour",
+        "register": "5/hour",
+        "password_reset": "5/hour",
+        "review": "20/hour",
+        "apply": "20/hour",
+    },
+}
+
+
+# =============================================================================
+# SIMPLE JWT
+# =============================================================================
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=2),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": False,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+}
+
+
+# =============================================================================
+# CORS
+# =============================================================================
+
+CORS_ALLOWED_ORIGINS = config(
+    "CORS_ALLOWED_ORIGINS",
+    default="http://localhost:5173,http://127.0.0.1:5173",
+    cast=lambda v: [s.strip() for s in v.split(",") if s.strip()],
+)
+
+CORS_ALLOW_CREDENTIALS = True
+
+
+# =============================================================================
+# FRONTEND URL (for password reset email links)
+# =============================================================================
+
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:5173")
