@@ -59,8 +59,8 @@ class AuthTests(APITestCase):
             "email": "new@example.com",
             "full_name": "New Student",
             "account_type": "student",
-            "password": "str0ng-pass",
-            "password2": "str0ng-pass",
+            "password": "Str0ng-pass",
+            "password2": "Str0ng-pass",
         }
         response = self.client.post(self.url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -74,8 +74,8 @@ class AuthTests(APITestCase):
             "email": "dup@example.com",
             "full_name": "Other",
             "account_type": "student",
-            "password": "str0ng-pass",
-            "password2": "str0ng-pass",
+            "password": "Str0ng-pass",
+            "password2": "Str0ng-pass",
         }
         response = self.client.post(self.url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -675,7 +675,10 @@ class NotificationTests(APITestCase):
 class AdminStatsTests(APITestCase):
     def setUp(self):
         self.admin = make_user(
-            username="stats_admin", email="stats_admin@skillplug.com", is_staff=True
+            username="stats_admin",
+            email="stats_admin@skillplug.com",
+            is_staff=True,
+            account_type="client",
         )
         self.student = make_user(username="stats_stu", email="stats_stu@example.com")
 
@@ -757,11 +760,11 @@ class ChatTests(APITestCase):
         self.assertEqual(Conversation.objects.count(), 1)
 
     def test_conversation_pair_is_unique_ordered(self):
-        conversation = Conversation.get_or_create_for_pair(self.alice, self.bob)
+        conversation, _ = Conversation.get_or_create_for_pair(self.alice, self.bob)
         self.assertEqual(conversation.user_a_id, self.alice.id)
         self.assertEqual(conversation.user_b_id, self.bob.id)
 
-        second = Conversation.get_or_create_for_pair(self.bob, self.alice)
+        second, _ = Conversation.get_or_create_for_pair(self.bob, self.alice)
         self.assertEqual(second.id, conversation.id)
 
     def test_cannot_message_self(self):
@@ -774,7 +777,7 @@ class ChatTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     def test_send_message_notifies_and_marks_read(self):
-        conversation = Conversation.get_or_create_for_pair(self.alice, self.bob)
+        conversation, _ = Conversation.get_or_create_for_pair(self.alice, self.bob)
 
         self.client.force_authenticate(user=self.alice)
         response = self.client.post(
@@ -801,7 +804,7 @@ class ChatTests(APITestCase):
         self.assertTrue(message.is_read)
 
     def test_cannot_read_others_conversation(self):
-        conversation = Conversation.get_or_create_for_pair(self.alice, self.bob)
+        conversation, _ = Conversation.get_or_create_for_pair(self.alice, self.bob)
         carol = make_user(username="carolchat", email="carol_chat@example.com")
         self.client.force_authenticate(user=carol)
         response = self.client.get(f"/api/v1/conversations/{conversation.pk}/")
