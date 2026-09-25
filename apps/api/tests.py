@@ -9,6 +9,7 @@ from io import BytesIO
 from PIL import Image
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Skill
 from apps.chat.models import Conversation, Message
@@ -702,6 +703,64 @@ class AdminStatsTests(APITestCase):
         self.assertIn("recent_signups_7d", response.data)
 
 
+class AdminSkillManagementTests(APITestCase):
+    def setUp(self):
+        self.admin = make_user(
+            username="skill_admin",
+            email="skill_admin@skillplug.com",
+            is_staff=True,
+        )
+        self.student = make_user(username="skill_stu", email="skill_stu@example.com")
+
+    def test_create_requires_staff(self):
+        self.client.force_authenticate(user=self.student)
+        response = self.client.post(
+            "/api/v1/skills/create/",
+            {"name": "Paintball"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_create_skill_and_it_appears_in_listing(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            "/api/v1/skills/create/",
+            {"name": "Makeup Artist", "icon": ""},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(Skill.objects.filter(name="Makeup Artist").exists())
+
+        listing = self.client.get("/api/v1/skills/")
+        self.assertEqual(listing.status_code, status.HTTP_200_OK)
+        names = [item["name"] for item in listing.data]
+        self.assertIn("Makeup Artist", names)
+
+    def test_admin_cannot_create_duplicate_name(self):
+        Skill.objects.create(name="Cake Baking")
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            "/api/v1/skills/create/",
+            {"name": "Cake Baking"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_delete_requires_staff(self):
+        skill = Skill.objects.create(name="To Delete")
+        self.client.force_authenticate(user=self.student)
+        response = self.client.delete(f"/api/v1/skills/{skill.id}/")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Skill.objects.filter(id=skill.id).exists())
+
+    def test_admin_can_delete_skill(self):
+        skill = Skill.objects.create(name="To Delete")
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.delete(f"/api/v1/skills/{skill.id}/")
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Skill.objects.filter(id=skill.id).exists())
+
+
 class NotificationPrefsTests(APITestCase):
     url = "/api/v1/auth/profile/"
 
@@ -970,3 +1029,475 @@ class ModerationTests(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class SuspendedUserTests(APITestCase):
+    """Banned users are rejected by JWT authentication."""
+
+    def test_suspended_user_gets_401(self):
+        user = make_user(username="banned", email="banned@example.com")
+        user.is_suspended = True
+        user.save(update_fields=["is_suspended"])
+        token = str(RefreshToken.for_user(user).access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        response = self.client.get("/api/v1/auth/profile/")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_active_user_passes(self):
+        user = make_user(username="active", email="active@example.com")
+        token = str(RefreshToken.for_user(user).access_token)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+        response = self.client.get("/api/v1/auth/profile/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class UnreadConversationTests(APITestCase):
+    """Unread-count endpoint + message pagination + read receipts."""
+
+    def setUp(self):
+        self.me = make_user(username="me", email="me@example.com")
+        self.other = make_user(username="other", email="other@example.com")
+        self.conversation, _ = Conversation.get_or_create_for_pair(self.me, self.other)
+
+    def send(self, sender, body):
+        return Message.objects.create(
+            conversation=self.conversation, sender=sender, body=body
+        )
+
+    def test_unread_count_endpoint(self):
+        self.send(self.other, "hi from other")
+        self.send(self.other, "and another")
+        self.send(self.me, "my own message")
+        self.client.force_authenticate(user=self.me)
+        response = self.client.get("/api/v1/conversations/unread-count/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 2)
+
+    def test_conversation_paginates_and_marks_latest_read(self):
+        for i in range(35):
+            self.send(self.other, f"msg {i}")
+        self.client.force_authenticate(user=self.me)
+        response = self.client.get(
+            f"/api/v1/conversations/{self.conversation.id}/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        self.assertEqual(len(data["messages"]), 30)
+        self.assertTrue(data["has_more"])
+        self.assertIsNotNone(data["next_before"])
+        # Only the 5 oldest messages stay unread.
+        self.assertEqual(
+            Message.objects.filter(is_read=False).count(), 5
+        )
+
+        page2 = self.client.get(
+            f"/api/v1/conversations/{self.conversation.id}/"
+            f"?before={data['next_before']}"
+        )
+        self.assertEqual(len(page2.data["messages"]), 5)
+        self.assertFalse(page2.data["has_more"])
+
+    def test_older_pages_do_not_mark_read(self):
+        self.send(self.other, "older")
+        self.send(self.me, "mine")
+        self.client.force_authenticate(user=self.me)
+        self.client.get(
+            f"/api/v1/conversations/{self.conversation.id}/"
+        )
+        # Re-fetch with before targeting the oldest message id.
+        self.client.get(
+            f"/api/v1/conversations/{self.conversation.id}/?before="
+            f"{Message.objects.order_by('id').first().id}"
+        )
+        self.assertFalse(
+            Message.objects.filter(
+                is_read=False, sender__in=[self.other]
+            ).exists()
+        )
+
+
+class JobDiscoveryTests(APITestCase):
+    """Job search: location filter + application sort."""
+
+    def setUp(self):
+        self.owner = make_user(
+            username="hiring", email="hiring@example.com", account_type="client"
+        )
+        self.student = make_user(username="s1", email="s1@example.com")
+        self.student2 = make_user(username="s2", email="s2@example.com")
+        self.remote_job = Job.objects.create(
+            title="Remote Logo Design",
+            description="design job",
+            location_preference="Remote",
+            posted_by=self.owner,
+        )
+        self.lagos_job = Job.objects.create(
+            title="Onsite Cook",
+            description="cook job",
+            location_preference="Lagos, Nigeria",
+            posted_by=self.owner,
+        )
+
+    def test_location_filter(self):
+        response = self.client.get("/api/v1/jobs/", {"location": "lagos"})
+        ids = [job["id"] for job in response.data["results"]]
+        self.assertIn(self.lagos_job.id, ids)
+        self.assertNotIn(self.remote_job.id, ids)
+
+    def test_sort_by_applications(self):
+        Application.objects.create(
+            student=self.student, job=self.remote_job, message="perf"
+        )
+        response = self.client.get(
+            "/api/v1/jobs/", {"sort": "applications"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"][0]["id"], self.remote_job.id)
+
+
+class FreelancerDiscoveryTests(APITestCase):
+    """Freelancer filters: department + minimum rating."""
+
+    def setUp(self):
+        self.top = make_user(
+            username="topstudent",
+            email="top@example.com",
+            school="unilag",
+            department="Computer Science",
+            bio="Senior designer",
+            profile_complete=True,
+        )
+        self.low = make_user(
+            username="lowstudent",
+            email="low@example.com",
+            school="oau",
+            bio="Junior",
+            profile_complete=True,
+        )
+        self.reviewer = make_user(
+            username="rev", email="rev@example.com", account_type="client"
+        )
+        Review.objects.create(
+            reviewer=self.reviewer, freelancer=self.top, rating=5, comment="great"
+        )
+        Review.objects.create(
+            reviewer=self.reviewer, freelancer=self.low, rating=2, comment="ok"
+        )
+
+    def test_min_rating_filter(self):
+        response = self.client.get("/api/v1/freelancers/", {"min_rating": "4"})
+        ids = [user["id"] for user in response.data["results"]]
+        self.assertIn(self.top.id, ids)
+        self.assertNotIn(self.low.id, ids)
+
+    def test_department_filter(self):
+        response = self.client.get("/api/v1/freelancers/", {"department": "science"})
+        ids = [user["id"] for user in response.data["results"]]
+        self.assertIn(self.top.id, ids)
+        self.assertNotIn(self.low.id, ids)
+
+
+class AdminModerationTests(APITestCase):
+    """Admin job moderation, user suspension and time-series stats."""
+
+    def setUp(self):
+        self.admin = make_user(
+            username="admin",
+            email="admin@example.com",
+            account_type="client",
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def test_admin_lists_users_and_suspends(self):
+        target = make_user(
+            username="troublemaker", email="trouble@example.com"
+        )
+        response = self.client.get("/api/v1/admin/users/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(target.id, [u["id"] for u in response.data])
+
+        response = self.client.post(
+            f"/api/v1/admin/users/{target.id}/action/",
+            {"action": "suspend"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        target.refresh_from_db()
+        self.assertTrue(target.is_suspended)
+        self.assertTrue(Notification.objects.filter(user=target).exists())
+
+        response = self.client.post(
+            f"/api/v1/admin/users/{target.id}/action/",
+            {"action": "unsuspend"},
+            format="json",
+        )
+        target.refresh_from_db()
+        self.assertFalse(target.is_suspended)
+
+    def test_cannot_suspend_self(self):
+        response = self.client.post(
+            f"/api/v1/admin/users/{self.admin.id}/action/",
+            {"action": "suspend"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_job_list_and_toggle(self):
+        job = Job.objects.create(
+            title="Review me", description="desc", posted_by=self.admin
+        )
+        response = self.client.get("/api/v1/admin/jobs/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(job.id, [j["id"] for j in response.data["results"]])
+
+        response = self.client.post(
+            f"/api/v1/admin/jobs/{job.id}/toggle/", format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        job.refresh_from_db()
+        self.assertFalse(job.is_active)
+
+    def test_admin_stats_include_timeseries(self):
+        make_user(username="u1", email="u1@example.com")
+        response = self.client.get("/api/v1/admin/stats/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["signups_last_30d"]), 30)
+        self.assertEqual(len(response.data["applications_last_30d"]), 30)
+
+
+class ChatOrderingAndPresenceTests(APITestCase):
+    def setUp(self):
+        self.me = make_user(username="me", email="me@example.com")
+        self.a = make_user(username="alpha", email="alpha@example.com")
+        self.b = make_user(username="beta", email="beta@example.com")
+
+    def test_conversations_sorted_by_recent_activity(self):
+        convo_a, _ = Conversation.get_or_create_for_pair(self.me, self.a)
+        convo_b, _ = Conversation.get_or_create_for_pair(self.me, self.b)
+        Message.objects.create(conversation=convo_b, sender=self.b, body="newest")
+        # Bump convo_b's timestamp above convo_a's.
+        from django.utils import timezone as tz
+        Conversation.objects.filter(pk=convo_b.pk).update(updated_at=tz.now() + tz.timedelta(seconds=5))
+
+        self.client.force_authenticate(user=self.me)
+        response = self.client.get("/api/v1/conversations/")
+        ids = [c["id"] for c in response.data]
+        self.assertEqual(ids[0], convo_b.id)
+        self.assertEqual(ids[1], convo_a.id)
+
+    def test_presence_returns_offline_default(self):
+        self.client.force_authenticate(user=self.me)
+        response = self.client.post(
+            "/api/v1/conversations/presence/",
+            {"ids": [self.a.id, self.b.id]},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["presence"][str(self.a.id)])
+
+
+class InviteFlowTests(APITestCase):
+    def setUp(self):
+        self.client_user = make_user(
+            username="owner", email="owner@example.com", account_type="client"
+        )
+        self.student = make_user(username="stud", email="stud@example.com")
+        self.job = Job.objects.create(
+            title="Logo", description="design a logo", posted_by=self.client_user
+        )
+
+    def test_owner_can_invite_student(self):
+        self.client.force_authenticate(user=self.client_user)
+        response = self.client.post(
+            f"/api/v1/jobs/{self.job.id}/invite/{self.student.id}/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        app = Application.objects.get(job=self.job, student=self.student)
+        self.assertEqual(app.status, "invited")
+        self.assertTrue(Notification.objects.filter(user=self.student).exists())
+
+    def test_duplicate_invite_rejected(self):
+        Application.objects.create(
+            student=self.student, job=self.job, status="invited", message="inv"
+        )
+        self.client.force_authenticate(user=self.client_user)
+        response = self.client.post(
+            f"/api/v1/jobs/{self.job.id}/invite/{self.student.id}/"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_student_accepts_invitation(self):
+        app = Application.objects.create(
+            student=self.student, job=self.job, status="invited", message="inv"
+        )
+        self.client.force_authenticate(user=self.student)
+        response = self.client.post(
+            f"/api/v1/jobs/{self.job.id}/invitations/{app.id}/respond/",
+            {"accepted": True, "message": "Happy to help!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        app.refresh_from_db()
+        self.assertEqual(app.status, "pending")
+        self.assertEqual(app.message, "Happy to help!")
+
+    def test_student_declines_invitation(self):
+        app = Application.objects.create(
+            student=self.student, job=self.job, status="invited", message="inv"
+        )
+        self.client.force_authenticate(user=self.student)
+        response = self.client.post(
+            f"/api/v1/jobs/{self.job.id}/invitations/{app.id}/respond/",
+            {"accepted": False},
+            format="json",
+        )
+        app.refresh_from_db()
+        self.assertEqual(app.status, "rejected")
+
+
+class JobDraftAndRepostTests(APITestCase):
+    def setUp(self):
+        self.owner = make_user(
+            username="owner", email="owner@example.com", account_type="client"
+        )
+
+    def test_drafts_hidden_from_board_but_in_my_jobs(self):
+        Job.objects.create(title="Draft job", description="d", status="draft", posted_by=self.owner)
+        self.client.force_authenticate(user=self.owner)
+        public = self.client.get("/api/v1/jobs/")
+        self.assertEqual(public.data["results"], [])
+        mine = self.client.get("/api/v1/jobs/my-jobs/")
+        self.assertEqual(len(mine.data["results"]), 1)
+
+    def test_repost_creates_fresh_open_job(self):
+        old = Job.objects.create(
+            title="Repeat gig",
+            description="desc",
+            status="completed",
+            posted_by=self.owner,
+            location_preference="Lagos",
+        )
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(f"/api/v1/jobs/{old.id}/repost/")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        new_job = Job.objects.get(pk=response.data["id"])
+        self.assertEqual(new_job.title, "Repeat gig")
+        self.assertEqual(new_job.status, "open")
+        self.assertTrue(new_job.is_active)
+
+    def test_archive_stale_hidden(self):
+        from django.utils import timezone as tz
+        self.admin = make_user(
+            username="admin", email="adm2@example.com", account_type="client",
+            is_staff=True, is_superuser=True,
+        )
+        stale = Job.objects.create(title="Old", description="d", status="open", posted_by=self.owner)
+        fresh = Job.objects.create(title="Fresh", description="d", status="open", posted_by=self.owner)
+        Job.objects.filter(pk=stale.pk).update(
+            updated_at=tz.now() - tz.timedelta(days=120)
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post("/api/v1/admin/jobs/archive-stale/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["archived"], 1)
+        stale.refresh_from_db()
+        fresh.refresh_from_db()
+        self.assertFalse(stale.is_active)
+        self.assertTrue(fresh.is_active)
+
+
+class BadgesAndNotesTests(APITestCase):
+    def setUp(self):
+        self.client_user = make_user(
+            username="client", email="client@example.com", account_type="client"
+        )
+        self.freelancer = make_user(
+            username="freelancer", email="freelancer@example.com",
+            school="unilag", department="CS", bio="hello", whatsapp="2348000000000",
+            full_name="Freelancer One",
+        )
+        self.freelancer.profile_complete = True
+        self.freelancer.save(update_fields=["profile_complete"])
+
+    def test_badges_include_jobs_completed(self):
+        for i in range(3):
+            Job.objects.create(
+                title=f"Job {i}", description="d", status="completed",
+                posted_by=self.freelancer,
+            )
+        response = self.client.get(f"/api/v1/users/{self.freelancer.username}/")
+        keys = [b["key"] for b in response.data["badges"]]
+        self.assertIn("gig_1", keys)
+        self.assertNotIn("gig_5", keys)
+
+    def test_private_note_set_clear_and_serialized(self):
+        self.client.force_authenticate(user=self.client_user)
+        about = self.freelancer
+        self.client.post(f"/api/v1/users/{about.username}/save/")
+        response = self.client.put(
+            f"/api/v1/users/{about.username}/note/",
+            {"note": "Great at UI work"},
+            format="json",
+        )
+        self.assertEqual(response.data["note"], "Great at UI work")
+
+        saved = self.client.get("/api/v1/users/saved/")
+        self.assertEqual(saved.data[0]["note"], "Great at UI work")
+
+        self.client.put(
+            f"/api/v1/users/{about.username}/note/",
+            {"note": ""},
+            format="json",
+        )
+        saved = self.client.get("/api/v1/users/saved/")
+        self.assertEqual(saved.data[0]["note"], "")
+
+
+class ReviewReplyAndMyReportsTests(APITestCase):
+    def setUp(self):
+        self.client_user = make_user(
+            username="client", email="client@example.com", account_type="client"
+        )
+        self.freelancer = make_user(username="freelancer2", email="freelancer2@example.com")
+        self.other = make_user(username="other", email="other@example.com")
+        self.review = Review.objects.create(
+            reviewer=self.client_user, freelancer=self.freelancer, rating=5, comment="nice"
+        )
+
+    def test_freelancer_can_reply(self):
+        self.client.force_authenticate(user=self.freelancer)
+        response = self.client.post(
+            f"/api/v1/reviews/{self.review.id}/reply/",
+            {"reply": "Thank you!"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.review.refresh_from_db()
+        self.assertEqual(self.review.reply, "Thank you!")
+
+    def test_non_freelancer_cannot_reply(self):
+        self.client.force_authenticate(user=self.other)
+        response = self.client.post(
+            f"/api/v1/reviews/{self.review.id}/reply/",
+            {"reply": "hijack"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_my_reports_only_own(self):
+        Report.objects.create(
+            reporter=self.client_user, target_type="job",
+            target_job=Job.objects.create(title="t", description="d", posted_by=self.freelancer),
+            reason="spam",
+        )
+        Report.objects.create(
+            reporter=self.other, target_type="job",
+            target_job=Job.objects.create(title="u", description="d", posted_by=self.freelancer),
+            reason="spam",
+        )
+        self.client.force_authenticate(user=self.client_user)
+        response = self.client.get("/api/v1/reports/my/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)

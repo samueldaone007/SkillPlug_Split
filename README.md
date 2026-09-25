@@ -14,7 +14,7 @@ A production-ready MVP that connects Nigerian university students with clients w
 - **Reviews & Ratings** - 5-star rating system with comments
 - **Saved Freelancers** - Bookmark favorite students
 - **In-App Notifications** - Real-time bell with unread badge and a browser chime sound; notified on verification outcomes, job applications, application status changes, new reviews/saves, chat messages, and moderation decisions. Notifications are paginated with a "Load more" button, and you can mute the sound or opt out per notification type in **Settings**
-- **In-App Messaging** - Direct chats between clients and freelancers (`/messages`), with read receipts, unread badges, and new-message notifications
+- **In-App Messaging** - Real-time chats between clients and freelancers over websockets (`/messages`), with typing indicators, read receipts, unread badges, and new-message notifications (falls back to 5s polling automatically)
 - **Reports & Moderation** - Report suspicious profiles or jobs; admins review them in the reports queue and can deactivate the offending job/user
 - **Dark Mode** - Toggle between light and dark themes
 - **Password Strength** - Registration enforces 8+ characters with uppercase, lowercase, and a number
@@ -40,7 +40,9 @@ A production-ready MVP that connects Nigerian university students with clients w
 |------------|---------|
 | Django 5.0 | Backend framework |
 | Django REST Framework | REST API for the React frontend |
+| drf-spectacular | Auto-generated OpenAPI schema + Swagger/ReDoc docs |
 | Simple JWT | JWT auth for the API |
+| Django Channels + daphne | Real-time chat websockets |
 | React 18 + Vite | Frontend SPA |
 | TailwindCSS | Styling (CDN for templates, PostCSS for React) |
 | HTMX | Interactive features on the server-rendered frontend |
@@ -50,7 +52,8 @@ A production-ready MVP that connects Nigerian university students with clients w
 | django-cors-headers | Cross-origin API access from the React app |
 | Pillow | Image processing |
 | WhiteNoise | Static file serving |
-| Gunicorn | WSGI server |
+| Gunicorn | WSGI server (HTTP API / admin) |
+| daphne | ASGI server (websockets + HTTP) |
 | pytest + factory-boy | Testing |
 
 ## Project Structure
@@ -64,7 +67,7 @@ skillplug/
 │   ├── jobs/              # Job postings and applications
 │   ├── reviews/           # Ratings and reviews
 │   ├── notifications/     # In-app notifications (bell + chime, paginated)
-│   ├── chat/              # Direct messaging between users
+│   ├── chat/              # Direct messaging (websocket consumer + REST)
 │   └── moderation/        # User reports and admin review queue
 ├── frontend/              # React (Vite) single-page app
 │   └── src/
@@ -155,6 +158,10 @@ python manage.py runserver
 
 - Server-rendered app: http://127.0.0.1:8000/
 - Django admin: http://127.0.0.1:8000/admin/
+- API docs (Swagger): http://127.0.0.1:8000/api/docs/
+- API docs (ReDoc): http://127.0.0.1:8000/api/redoc/
+
+`runserver` runs daphne (ASGI) so real-time chat websockets work out of the box. Without a `REDIS_URL` set, chat uses Django's in-memory channel layer (fine for local dev / single process); set `REDIS_URL` for multi-worker production deployments.
 
 ### 5. Run the React Frontend (optional)
 
@@ -267,6 +274,18 @@ The bell icon in the React app (top-right on desktop, inline on mobile) polls th
 | GET/PUT/DELETE | `/portfolio/<id>/` | Manage portfolio item | Owner |
 | GET | `/reviews/<username>/` | Freelancer reviews | No |
 | POST | `/reviews/<username>/create/` | Leave review | Yes |
+| GET | `/schema/` | OpenAPI schema (JSON) | No |
+
+Interactive docs (Swagger UI at `/api/docs/`, ReDoc at `/api/redoc/`) are generated from the schema — see [Quick Start](#4-run-the-backend).
+
+## Real-Time Chat
+
+Messages are **sent with the regular REST API** (`POST /api/v1/conversations/<id>/`) so they keep the existing validation, throttling, and notification logic. A websocket is used for *live delivery* and typing indicators:
+
+- Connect to `ws(s)://<host>/ws/conversations/<id>/?token=<access_token>` (JWT via query string).
+- When a message is created, the server broadcasts it to the group as JSON with the same shape as the message serializer.
+- Clients may send `{"type": "typing"}` (throttled); the server relays it to other members. `{"type": "typing", "sender_id": …, "sender_name": …}`.
+- If the websocket is unavailable (offline, expired token, production without `VITE_WS_URL`), the conversation page automatically falls back to 5-second polling.
 
 ## Server-Rendered URL Routes
 

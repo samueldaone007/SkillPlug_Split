@@ -4,13 +4,20 @@ import { useAuth } from './AuthContext'
 
 const NotificationsContext = createContext(null)
 
+console.log('[SkillPlug] notifications v3 loaded')
+
 let sharedContext = null
 
-function ensureContext() {
+export function primeAudio() {
+  return getAudioContext()
+}
+
+function getAudioContext() {
   try {
     const AudioContext = window.AudioContext || window.webkitAudioContext
-    if (AudioContext && !sharedContext) sharedContext = new AudioContext()
-    if (sharedContext && sharedContext.state === 'suspended') {
+    if (!AudioContext) return null
+    if (!sharedContext) sharedContext = new AudioContext()
+    if (sharedContext.state === 'suspended') {
       sharedContext.resume().catch(() => {})
     }
     return sharedContext
@@ -19,14 +26,12 @@ function ensureContext() {
   }
 }
 
-function playChime() {
-  const ctx = ensureContext()
-  if (!ctx) return
+function buildChime(ctx) {
   try {
     const now = ctx.currentTime
     const envelope = ctx.createGain()
     envelope.gain.setValueAtTime(0, now)
-    envelope.gain.linearRampToValueAtTime(0.12, now + 0.02)
+    envelope.gain.linearRampToValueAtTime(0.18, now + 0.02)
     envelope.gain.exponentialRampToValueAtTime(0.0001, now + 0.55)
     envelope.connect(ctx.destination)
 
@@ -48,13 +53,29 @@ function playChime() {
   }
 }
 
-const POLL_INTERVAL_MS = 30000
+function playChime() {
+  const ctx = sharedContext
+  if (!ctx || ctx.state !== 'running') return
+  buildChime(ctx)
+}
+
+function testChime() {
+  getAudioContext()
+  const ctx = sharedContext
+  if (!ctx) return
+  if (ctx.state === 'suspended') {
+    ctx.resume().then(() => buildChime(ctx)).catch(() => {})
+  } else {
+    buildChime(ctx)
+  }
+}
+
+const POLL_INTERVAL_MS = 10000
 
 export function NotificationsProvider({ children }) {
   const { isAuthenticated, user } = useAuth()
   const [notifications, setNotifications] = useState([])
   const [unread, setUnread] = useState(0)
-  const [open, setOpen] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const prevUnreadRef = useRef(0)
@@ -104,6 +125,83 @@ export function NotificationsProvider({ children }) {
     }
   }, [isAuthenticated, loadingMore])
 
+  const notifyNew = useCallback(async () => {
+    const result = await refresh()
+    if (!result) return
+    const soundAllowed = user?.notification_sound_enabled !== false
+    if (soundAllowed && result.count > prevUnreadRef.current) playChime()
+    prevUnreadRef.current = result.count
+  }, [refresh, user?.notification_sound_enabled])
+
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
+
+    const token = localStorage.getItem('accessToken')
+    const base =
+      import.meta.env.VITE_WS_URL ||
+      `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+    let ws
+    let retryTimer
+    let pingTimer
+    let stopped = false
+
+    const sendPing = () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: 'ping' }))
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    const connectWs = () => {
+      if (stopped) return
+      try {
+        ws = new WebSocket(`${base}/ws/notifications/?token=${encodeURIComponent(token || '')}`)
+      } catch {
+        return
+      }
+      ws.onopen = () => {
+        sendPing()
+        if (pingTimer) clearInterval(pingTimer)
+        pingTimer = setInterval(sendPing, 20000)
+      }
+      ws.onmessage = (event) => {
+        let payload
+        try {
+          payload = JSON.parse(event.data)
+        } catch {
+          return
+        }
+        if (payload?.type === 'notification') {
+          notifyNew()
+        }
+      }
+      ws.onclose = () => {
+        if (pingTimer) {
+          clearInterval(pingTimer)
+          pingTimer = null
+        }
+        if (!stopped) retryTimer = setTimeout(connectWs, 5000)
+      }
+      ws.onerror = () => {
+        // onclose handles reconnection
+      }
+    }
+    connectWs()
+
+    return () => {
+      stopped = true
+      clearTimeout(retryTimer)
+      clearInterval(pingTimer)
+      if (ws) {
+        ws.onclose = null
+        ws.close()
+      }
+    }
+  }, [isAuthenticated, notifyNew])
+
   useEffect(() => {
     if (!isAuthenticated) {
       setNotifications([])
@@ -121,24 +219,28 @@ export function NotificationsProvider({ children }) {
     }
     first()
 
-    const timer = setInterval(async () => {
-      const result = await refresh()
-      if (!result) return
-      const soundAllowed = user?.notification_sound_enabled !== false
-      if (soundAllowed && result.count > prevUnreadRef.current) playChime()
-      prevUnreadRef.current = result.count
+    const timer = setInterval(() => {
+      notifyNew()
     }, POLL_INTERVAL_MS)
 
     return () => {
       stopped = true
       clearInterval(timer)
     }
-  }, [isAuthenticated, refresh, user?.notification_sound_enabled])
+  }, [isAuthenticated, refresh, notifyNew])
 
   useEffect(() => {
-    const unlock = () => ensureContext()
+    const unlock = () => getAudioContext()
     window.addEventListener('pointerdown', unlock)
-    return () => window.removeEventListener('pointerdown', unlock)
+    window.addEventListener('click', unlock)
+    window.addEventListener('keydown', unlock)
+    window.addEventListener('touchstart', unlock, { passive: true })
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('click', unlock)
+      window.removeEventListener('keydown', unlock)
+      window.removeEventListener('touchstart', unlock)
+    }
   }, [])
 
   const markRead = useCallback(async (id) => {
@@ -148,8 +250,10 @@ export function NotificationsProvider({ children }) {
     setUnread((prev) => Math.max(0, prev - 1))
     try {
       await api.post(`/notifications/${id}/read/`)
-    } catch {
+      return true
+    } catch (err) {
       refresh()
+      throw err
     }
   }, [refresh])
 
@@ -158,8 +262,10 @@ export function NotificationsProvider({ children }) {
     setUnread(0)
     try {
       await api.post('/notifications/read-all/')
-    } catch {
+      return true
+    } catch (err) {
       refresh()
+      throw err
     }
   }, [refresh])
 
@@ -168,14 +274,15 @@ export function NotificationsProvider({ children }) {
       value={{
         notifications,
         unread,
-        open,
-        setOpen,
         refresh,
         loadMore,
         hasMore,
         loadingMore,
         markRead,
         markAllRead,
+        notifyNew,
+        primeAudio: () => getAudioContext(),
+        testChime,
       }}
     >
       {children}

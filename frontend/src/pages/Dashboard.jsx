@@ -16,6 +16,7 @@ const appStatusColors = {
   pending: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300',
   accepted: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300',
   rejected: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  invited: 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300',
 }
 
 const jobStatusColors = {
@@ -23,6 +24,7 @@ const jobStatusColors = {
   in_progress: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
   completed: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
   closed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300',
+  draft: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',
 }
 
 export default function Dashboard() {
@@ -65,6 +67,39 @@ export default function Dashboard() {
       showToast(getErrorMessage(err), 'error')
     } finally {
       setRequesting(false)
+    }
+  }
+
+  const respondInvitation = async (app, accepted) => {
+    try {
+      await api.post(`/jobs/${app.job?.id}/invitations/${app.id}/respond/`, { accepted })
+      showToast(accepted ? 'Invitation accepted!' : 'Invitation declined.', 'success')
+      const { data: fresh } = await api.get('/dashboard/')
+      setData(fresh)
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    }
+  }
+
+  const updateOwnJob = async (jobId, status) => {
+    try {
+      await api.patch(`/jobs/${jobId}/`, { status })
+      showToast('Job published!', 'success')
+      const { data: fresh } = await api.get('/dashboard/')
+      setData(fresh)
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    }
+  }
+
+  const repostOwnJob = async (jobId) => {
+    try {
+      await api.post(`/jobs/${jobId}/repost/`)
+      showToast('Job reposted!', 'success')
+      const { data: fresh } = await api.get('/dashboard/')
+      setData(fresh)
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
     }
   }
 
@@ -205,6 +240,24 @@ export default function Dashboard() {
                           {app.status?.charAt(0).toUpperCase() + app.status?.slice(1) || 'Pending'}
                         </span>
                       </div>
+                      {app.status === 'invited' && (
+                        <div className="mt-3 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => respondInvitation(app, true)}
+                            className="btn-primary text-xs !py-1.5"
+                          >
+                            Accept Invitation
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => respondInvitation(app, false)}
+                            className="btn-secondary text-xs !py-1.5"
+                          >
+                            Decline
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -255,6 +308,27 @@ export default function Dashboard() {
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${jobStatusColors[job.status] || jobStatusColors.open}`}>
                           {job.status?.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                         </span>
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        {job.status === 'draft' && (
+                          <button
+                            type="button"
+                            onClick={() => updateOwnJob(job.id, 'open')}
+                            className="btn-primary text-xs !py-1.5"
+                          >
+                            Publish
+                          </button>
+                        )}
+                        {(job.status === 'completed' || job.status === 'closed') && (
+                          <button
+                            type="button"
+                            onClick={() => repostOwnJob(job.id)}
+                            className="btn-primary text-xs !py-1.5"
+                          >
+                            Repost
+                          </button>
+                        )}
+                        <Link to={`/jobs/${job.id}`} className="btn-secondary text-xs !py-1.5">View</Link>
                       </div>
                     </div>
                   ))}

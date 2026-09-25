@@ -7,7 +7,7 @@ from django.db.models import Avg, Count
 from django.contrib.auth import get_user_model, password_validation
 from rest_framework import serializers
 
-from apps.accounts.models import Skill
+from apps.accounts.models import Skill, FreelancerNote
 from apps.chat.models import Conversation, Message
 from apps.jobs.models import Job, Application
 from apps.marketplace.models import PortfolioItem
@@ -16,6 +16,61 @@ from apps.notifications.models import Notification
 from apps.reviews.models import Review
 
 User = get_user_model()
+
+
+# =============================================================================
+# BADGES (gamification, computed - no storage)
+# =============================================================================
+
+def compute_badges(user):
+    """Earned badges based on activity. All derived from live counts."""
+    total_jobs = (
+        Job.objects.filter(posted_by=user, status="completed").count()
+        + Application.objects.filter(
+            student=user, status="accepted", job__status="completed"
+        ).values_list("job_id", flat=True).distinct().count()
+    )
+    review_count = user.reviews_received.count()
+    avg_rating = 0
+    if review_count:
+        total = sum(r.rating for r in user.reviews_received.all())
+        avg_rating = round(total / review_count, 1)
+    portfolio_count = user.portfolio_items.count()
+
+    tiers = [
+        (1, "gig_1", "First Gig Completed", "🎉"),
+        (5, "gig_5", "5 Jobs Completed", "⚡"),
+        (10, "gig_10", "10 Jobs Completed", "🏆"),
+        (25, "gig_25", "25 Jobs Completed", "🚀"),
+        (50, "gig_50", "50 Jobs Completed", "💎"),
+    ]
+    badges = [
+        {"key": key, "label": label, "icon": icon}
+        for threshold, key, label, icon in tiers
+        if total_jobs >= threshold
+    ]
+
+    for threshold, key, label, icon in [
+        (5, "review_5", "5 Star Reviews", "⭐"),
+        (10, "review_10", "10 Star Reviews", "🌟"),
+        (25, "review_25", "25 Star Reviews", "👑"),
+    ]:
+        if review_count >= threshold:
+            badges.append({"key": key, "label": label, "icon": icon})
+
+    for threshold, key, label, icon in [
+        (5, "portfolio_5", "5 Projects Shown", "🎨"),
+        (10, "portfolio_10", "10 Projects Shown", "🖼️"),
+    ]:
+        if portfolio_count >= threshold:
+            badges.append({"key": key, "label": label, "icon": icon})
+
+    if review_count >= 10 and avg_rating >= 4.8:
+        badges.append({"key": "top_rated", "label": "Top Rated", "icon": "🔥"})
+    if user.verified:
+        badges.append({"key": "verified", "label": "Verified Student", "icon": "✅"})
+
+    return badges
 
 
 # =============================================================================
@@ -83,6 +138,8 @@ class UserPublicSerializer(serializers.ModelSerializer):
     review_count = serializers.SerializerMethodField()
     portfolio_count = serializers.SerializerMethodField()
     is_saved = serializers.SerializerMethodField()
+    note = serializers.SerializerMethodField()
+    badges = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -91,7 +148,7 @@ class UserPublicSerializer(serializers.ModelSerializer):
             "school", "school_display", "department", "bio", "whatsapp", "whatsapp_link",
             "skills", "profile_image", "availability_status", "verified",
             "date_joined", "avg_rating", "review_count", "portfolio_count",
-            "is_student", "is_saved",
+            "is_student", "is_saved", "note", "badges",
         ]
 
     def get_avg_rating(self, obj):
@@ -112,6 +169,19 @@ class UserPublicSerializer(serializers.ModelSerializer):
             return request.user.saved_freelancers.filter(id=obj.id).exists()
         return False
 
+    def get_note(self, obj):
+        request = self.context.get("request")
+        if request and request.user.is_authenticated:
+            note = FreelancerNote.objects.filter(
+                user=request.user, freelancer=obj
+            ).first()
+            if note and note.note:
+                return note.note
+        return ""
+
+    def get_badges(self, obj):
+        return compute_badges(obj)
+
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """Full profile for the authenticated user."""
@@ -127,6 +197,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
     verification_status = serializers.CharField(read_only=True)
     verification_requested = serializers.BooleanField(required=False)
     is_staff = serializers.BooleanField(read_only=True)
+    badges = serializers.SerializerMethodField()
+
+    def get_badges(self, obj):
+        return compute_badges(obj)
 
     class Meta:
         model = User
@@ -139,6 +213,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "profile_complete", "date_joined", "updated_at",
             "saved_freelancers", "dark_mode", "is_student", "is_staff",
             "notification_sound_enabled", "notification_preferences",
+            "badges",
         ]
         read_only_fields = ["username", "email", "verified", "verification_status",
                             "verification_date", "verification_reject_reason",
@@ -193,7 +268,7 @@ class AdminVerificationSerializer(serializers.ModelSerializer):
             "school", "school_display", "department", "profile_image",
             "verification_doc", "verified", "verification_requested",
             "verification_status", "verification_date", "profile_complete",
-            "date_joined", "updated_at",
+            "is_suspended", "date_joined", "updated_at",
         ]
 
 
@@ -411,7 +486,7 @@ class ReviewSerializer(serializers.ModelSerializer):
         model = Review
         fields = [
             "id", "reviewer", "reviewer_name", "freelancer",
-            "rating", "comment", "rating_stars", "created_at", "updated_at",
+            "rating", "comment", "reply", "rating_stars", "created_at", "updated_at",
         ]
         read_only_fields = ["reviewer", "freelancer", "created_at", "updated_at"]
 

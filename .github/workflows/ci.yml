@@ -60,8 +60,8 @@ jobs:
       - name: Run tests
         run: python manage.py test
 
-      - name: Compile validation (DRF serializers/views import)
-        run: python -c "import apps.api.views, apps.api.serializers, apps.api.urls"
+      - name: Compile validation (DRF serializers/views/channels import)
+        run: python -c "import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'skillplug.settings'); django.setup(); import apps.api.views, apps.api.serializers, apps.api.urls, apps.chat.routing, apps.chat.consumers"
 
   frontend:
     name: React frontend

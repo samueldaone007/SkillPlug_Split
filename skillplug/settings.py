@@ -50,6 +50,9 @@ if RENDER_EXTERNAL_HOSTNAME:
 # =============================================================================
  
 INSTALLED_APPS = [
+    # daphne must come before django.contrib.staticfiles so runserver
+    # uses the ASGI server (required for real-time chat websockets).
+    "daphne",
     # Django core
     "django.contrib.admin",
     "django.contrib.auth",
@@ -70,6 +73,8 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "corsheaders",
     "django_filters",
+    "channels",
+    "drf_spectacular",
     
     # Local apps
     "apps.accounts",
@@ -270,7 +275,7 @@ WHATSAPP_DEFAULT_MESSAGE = config(
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "apps.api.authentication.BannedUserJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
@@ -278,6 +283,7 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_FILTER_BACKENDS": (
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.SearchFilter",
@@ -348,6 +354,44 @@ else:
             "LOCATION": "skillplug-dev-cache",
         }
     }
+
+
+# =============================================================================
+# CHAT CHANNELS (real-time websockets)
+# =============================================================================
+
+# Requires the same REDIS_URL as the cache. Falls back to an in-memory layer
+# so local dev and tests work without a Redis server.
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [REDIS_URL]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        }
+    }
+
+
+# =============================================================================
+# API DOCUMENTATION (drf-spectacular)
+# =============================================================================
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "SkillPlug API",
+    "DESCRIPTION": (
+        "REST API for the SkillPlug Nigerian student skills marketplace. "
+        "Covers authentication, freelance profiles, jobs & applications, "
+        "reviews, portfolio, notifications, chat, and moderation."
+    ),
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+}
 
 
 # =============================================================================

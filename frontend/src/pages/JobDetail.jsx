@@ -6,7 +6,9 @@ import { useToast } from '../components/Toast'
 import Spinner from '../components/Spinner'
 import StarRating from '../components/StarRating'
 import ReportButton from '../components/ReportButton'
+import ShareButton from '../components/ShareButton'
 import { getErrorMessage, getProfileImageUrl, getInitials, formatRelativeTime, formatNaira } from '../utils/format'
+import { usePageMeta } from '../hooks/usePageMeta'
 
 export default function JobDetail() {
   const { id } = useParams()
@@ -19,6 +21,7 @@ export default function JobDetail() {
   const [applyForm, setApplyForm] = useState({ message: '', proposed_budget: '' })
   const [applying, setApplying] = useState(false)
   const [hasApplied, setHasApplied] = useState(false)
+  usePageMeta(job ? `${job.title} - Freelance Job` : 'Job', job?.description?.slice(0, 160))
 
   const loadJob = async () => {
     const { data } = await api.get(`/jobs/${id}/`)
@@ -93,6 +96,26 @@ export default function JobDetail() {
     }
   }
 
+  const repostJob = async () => {
+    try {
+      const { data } = await api.post(`/jobs/${id}/repost/`)
+      showToast('Job reposted!', 'success')
+      navigate(`/jobs/${data.id}`)
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    }
+  }
+
+  const startChat = async () => {
+    if (!job?.posted_by?.username) return
+    try {
+      const { data } = await api.post(`/conversations/start/${job.posted_by.username}/`)
+      navigate(`/messages/${data.id}`)
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    }
+  }
+
   if (loading) return <Spinner />
   if (!job) return <div className="py-16 text-center text-gray-500">Job not found.</div>
 
@@ -102,6 +125,7 @@ export default function JobDetail() {
     in_progress: 'badge-yellow',
     completed: 'badge-primary',
     closed: 'badge-gray',
+    draft: 'badge-gray',
   }
 
   return (
@@ -182,9 +206,17 @@ export default function JobDetail() {
             </div>
           )}
 
-          {/* Contact info (if visible) */}
-          {(job.contact_email || job.contact_whatsapp) && (
+          {/* Contact + in-app chat */}
+          {(job.contact_email || job.contact_whatsapp || (user && !isOwner)) && (
             <div className="mt-6 flex flex-wrap gap-3">
+              {user && !isOwner && (
+                <button type="button" onClick={startChat} className="btn-primary">
+                  <svg className="mr-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                  Message {job.posted_by?.display_name?.split(' ')[0] || 'Poster'}
+                </button>
+              )}
               {job.contact_email && (
                 <a href={`mailto:${job.contact_email}`} className="btn-secondary">
                   <svg className="mr-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -221,6 +253,24 @@ export default function JobDetail() {
               </select>
               <Link to={`/jobs/${job.id}/edit`} className="btn-secondary">Edit Job</Link>
               <button type="button" onClick={deleteJob} className="btn-danger">Delete Job</button>
+              {job.status === 'draft' && (
+                <button
+                  type="button"
+                  onClick={() => updateJobStatus('open')}
+                  className="btn-primary"
+                >
+                  Publish Job
+                </button>
+              )}
+              {(job.status === 'completed' || job.status === 'closed') && (
+                <button
+                  type="button"
+                  onClick={repostJob}
+                  className="btn-primary"
+                >
+                  Repost Job
+                </button>
+              )}
             </div>
           )}
 
@@ -265,8 +315,14 @@ export default function JobDetail() {
 
           {/* Report */}
           {user && !isOwner && (
-            <div className="mt-6 flex items-center justify-end border-t border-gray-100 pt-4 dark:border-gray-700">
+            <div className="mt-6 flex items-center justify-end gap-2 border-t border-gray-100 pt-4 dark:border-gray-700">
+              <ShareButton path={`/jobs/${job.id}`} label="Share" className="btn-secondary" />
               <ReportButton targetType="job" targetId={job.id} />
+            </div>
+          )}
+          {(!user || isOwner) && (
+            <div className="mt-6 flex items-center justify-end border-t border-gray-100 pt-4 dark:border-gray-700">
+              <ShareButton path={`/jobs/${job.id}`} label="Share" className="btn-secondary" />
             </div>
           )}
         </div>

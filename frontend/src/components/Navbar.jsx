@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Link, useNavigate, NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import NotificationBell from './NotificationBell'
+import { useUnreadMessages } from '../hooks/useUnreadMessages'
 import { getProfileImageUrl, getInitials } from '../utils/format'
 
 export default function Navbar() {
   const { user, isAuthenticated, isAdmin, logout, darkMode, toggleDarkMode } = useAuth()
+  const unreadMessages = useUnreadMessages()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [userOpen, setUserOpen] = useState(false)
   const navigate = useNavigate()
@@ -39,7 +41,6 @@ export default function Navbar() {
               )}
               {isAdmin && (
                 <>
-                  <NavLink to="/admin/verifications" className={navLinkClass}>Verifications</NavLink>
                   <NavLink to="/admin/overview" className={navLinkClass}>Overview</NavLink>
                   <NavLink to="/admin/reports" className={navLinkClass}>Reports</NavLink>
                 </>
@@ -48,6 +49,22 @@ export default function Navbar() {
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
+            {isAuthenticated && (
+              <Link
+                to="/messages"
+                aria-label={`Messages${unreadMessages > 0 ? `, ${unreadMessages} unread` : ''}`}
+                className="relative rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                {unreadMessages > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                    {unreadMessages > 99 ? '99+' : unreadMessages}
+                  </span>
+                )}
+              </Link>
+            )}
             {isAuthenticated && <NotificationBell />}
             <button
               type="button"
@@ -122,6 +139,13 @@ export default function Navbar() {
                         Messages
                       </Link>
                       <Link
+                        to="/reports"
+                        className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700"
+                        onClick={() => setUserOpen(false)}
+                      >
+                        My Reports
+                      </Link>
+                      <Link
                         to="/settings"
                         className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-700"
                         onClick={() => setUserOpen(false)}
@@ -148,6 +172,22 @@ export default function Navbar() {
           </div>
 
           <div className="flex items-center gap-2 md:hidden">
+            {isAuthenticated && (
+              <Link
+                to="/messages"
+                aria-label={`Messages${unreadMessages > 0 ? `, ${unreadMessages} unread` : ''}`}
+                className="relative rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                {unreadMessages > 0 && (
+                  <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold leading-none text-white">
+                    {unreadMessages > 99 ? '99+' : unreadMessages}
+                  </span>
+                )}
+              </Link>
+            )}
             {isAuthenticated && <NotificationBell />}
             <button
               type="button"
@@ -179,13 +219,12 @@ export default function Navbar() {
                 <NavLink to="/dashboard" className={navLinkClass} onClick={() => setMobileOpen(false)}>Dashboard</NavLink>
                 <NavLink to="/jobs/post" className={navLinkClass} onClick={() => setMobileOpen(false)}>Post a Job</NavLink>
                 <NavLink to={`/u/${user?.username}`} className={navLinkClass} onClick={() => setMobileOpen(false)}>My Profile</NavLink>
-                <NavLink to="/messages" className={navLinkClass} onClick={() => setMobileOpen(false)}>Messages</NavLink>
+                <NavLink to="/reports" className={navLinkClass} onClick={() => setMobileOpen(false)}>My Reports</NavLink>
                 <NavLink to="/settings" className={navLinkClass} onClick={() => setMobileOpen(false)}>Settings</NavLink>
               </>
             )}
             {isAdmin && (
               <>
-                <NavLink to="/admin/verifications" className={navLinkClass} onClick={() => setMobileOpen(false)}>Verifications</NavLink>
                 <NavLink to="/admin/overview" className={navLinkClass} onClick={() => setMobileOpen(false)}>Overview</NavLink>
                 <NavLink to="/admin/reports" className={navLinkClass} onClick={() => setMobileOpen(false)}>Reports</NavLink>
               </>

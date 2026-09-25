@@ -4,16 +4,18 @@ All endpoints that the React frontend consumes.
 """
 
 from django.db.models import Avg, Count, Q
+from django.db.models.functions import TruncDate
 from django.contrib.auth.forms import PasswordResetForm, SetPasswordForm
 from django.conf import settings
 from django.core.cache import cache
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from asgiref.sync import async_to_sync
 from rest_framework import generics, permissions, status, throttling
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.models import Skill, User
+from apps.accounts.models import Skill, User, FreelancerNote
 from apps.chat.models import Conversation, Message
 from apps.jobs.models import Job, Application
 from apps.marketplace.models import PortfolioItem
@@ -267,6 +269,26 @@ class SavedFreelancersView(generics.ListAPIView):
         ).prefetch_related("skills")
 
 
+class FreelancerNoteView(APIView):
+    """Set or clear the client's private note about a freelancer."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def put(self, request, username):
+        freelancer = get_object_or_404(User, username=username)
+        note = (request.data.get("note") or "").strip()
+        if note:
+            FreelancerNote.objects.update_or_create(
+                user=request.user,
+                freelancer=freelancer,
+                defaults={"note": note},
+            )
+        else:
+            FreelancerNote.objects.filter(
+                user=request.user, freelancer=freelancer
+            ).delete()
+        return Response({"note": note})
+
+
 # =============================================================================
 # SKILLS
 # =============================================================================
@@ -285,6 +307,33 @@ class SkillListView(generics.ListAPIView):
             ).data
             cache.set(key, data, 300)
         return Response(data)
+
+
+class SkillAdminCreateView(generics.CreateAPIView):
+    """Create a new skill. Admin only."""
+    serializer_class = SkillSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        cache.delete("api:skills")
+        return Response(
+            serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class SkillDeleteView(APIView):
+    """Delete a skill. Admin only."""
+    permission_classes = [permissions.IsAdminUser]
+
+    def delete(self, request, pk):
+        skill = get_object_or_404(Skill, pk=pk)
+        skill.delete()
+        cache.delete("api:skills")
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # =============================================================================
@@ -315,6 +364,17 @@ class FreelancerListView(generics.ListAPIView):
         school = self.request.query_params.get("school", "")
         if school:
             qs = qs.filter(school=school)
+
+        department = self.request.query_params.get("department", "")
+        if department:
+            qs = qs.filter(department__icontains=department)
+
+        min_rating = self.request.query_params.get("min_rating", "")
+        if min_rating:
+            try:
+                qs = qs.filter(avg_rating_val__gte=float(min_rating))
+            except (TypeError, ValueError):
+                pass
 
         skill = self.request.query_params.get("skill", "")
         if skill:
@@ -425,7 +485,17 @@ class JobListView(generics.ListAPIView):
         if skill:
             qs = qs.filter(required_skills__name=skill)
 
-        return qs.order_by("-created_at")
+        location = self.request.query_params.get("location", "")
+        if location:
+            qs = qs.filter(location_preference__icontains=location)
+
+        sort = self.request.query_params.get("sort", "recent")
+        if sort == "applications":
+            qs = qs.order_by("-_application_count", "-created_at")
+        else:
+            qs = qs.order_by("-created_at")
+
+        return qs.distinct()
 
 
 class JobCreateView(generics.CreateAPIView):
@@ -548,6 +618,151 @@ class JobApplicationsView(generics.ListAPIView):
         return Application.objects.filter(job=job).select_related("student")
 
 
+class JobInviteView(APIView):
+    """Job owner invites a freelancer to apply (creates an 'invited' application)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk, user_id):
+        job = get_object_or_404(Job, pk=pk)
+        if job.posted_by != request.user and not request.user.is_staff:
+            return Response(
+                {"error": "You are not authorized to invite to this job."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if job.status != "open":
+            return Response(
+                {"error": "You can only invite applicants to an open job."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        candidate = get_object_or_404(User, pk=user_id)
+        if not candidate.is_student:
+            return Response(
+                {"error": "You can only invite students to apply."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if Application.objects.filter(student=candidate, job=job).exists():
+            return Response(
+                {"error": "This student has already applied to or been invited for this job."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        application = Application.objects.create(
+            student=candidate,
+            job=job,
+            status="invited",
+            message=f"Invited by {request.user.display_name}.",
+        )
+        notify(
+            candidate,
+            f"{request.user.display_name} invited you to apply for '{job.title}'.",
+            notification_type="application",
+            link=f"/jobs/{job.pk}",
+        )
+        return Response(
+            ApplicationSerializer(application, context={"request": request}).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class InvitationRespondView(APIView):
+    """Freelancer accepts or declines a job invitation."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk, app_id):
+        application = get_object_or_404(
+            Application.objects.select_related("job"), pk=app_id
+        )
+        if application.student != request.user:
+            return Response(
+                {"error": "This invitation was not addressed to you."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if application.status != "invited":
+            return Response(
+                {"error": "This invitation has already been responded to."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        accepted = bool(request.data.get("accepted"))
+        application.status = "pending" if accepted else "rejected"
+        message = (request.data.get("message") or "").strip()
+        if accepted and message:
+            application.message = message
+        proposed_budget = request.data.get("proposed_budget")
+        if accepted and proposed_budget:
+            application.proposed_budget = proposed_budget
+        application.save(
+            update_fields=["status", "message", "proposed_budget", "updated_at"]
+        )
+        notify(
+            application.job.posted_by,
+            f"{request.user.display_name} "
+            f"{'accepted' if accepted else 'declined'} your invitation for '{application.job.title}'.",
+            notification_type="application",
+            link=f"/jobs/{application.job.pk}",
+        )
+        return Response(
+            ApplicationSerializer(application, context={"request": request}).data
+        )
+
+
+class JobRepostView(APIView):
+    """Copy a job into a fresh 'open' listing (e.g. rehire for repeat work)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        job = get_object_or_404(Job, pk=pk)
+        if job.posted_by != request.user and not request.user.is_staff:
+            return Response(
+                {"error": "You are not authorized to repost this job."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        new_job = Job(
+            title=job.title,
+            description=job.description,
+            budget_type=job.budget_type,
+            budget_min=job.budget_min,
+            budget_max=job.budget_max,
+            budget_display=job.budget_display,
+            posted_by=job.posted_by,
+            status="open",
+            location_preference=job.location_preference,
+            contact_email=job.contact_email,
+            contact_whatsapp=job.contact_whatsapp,
+            is_active=True,
+        )
+        new_job.save()
+        new_job.required_skills.set(job.required_skills.all())
+        return Response(
+            JobSerializer(
+                new_job,
+                context={"request": request},
+            ).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class JobArchiveStaleView(APIView):
+    """Admin action: hide open jobs that have been dormant for 90+ days."""
+    permission_classes = [permissions.IsAdminUser]
+    STALE_DAYS = 90
+
+    def post(self, request):
+        cutoff = timezone.now() - timezone.timedelta(days=self.STALE_DAYS)
+        stale = Job.objects.filter(
+            is_active=True, status="open", updated_at__lt=cutoff
+        )
+        count = stale.count()
+        for job in stale:
+            job.is_active = False
+            job.save(update_fields=["is_active", "updated_at"])
+            notify(
+                job.posted_by,
+                f"Your job '{job.title}' was archived after {self.STALE_DAYS} days without activity.",
+                notification_type="system",
+                link=f"/jobs/{job.pk}",
+            )
+        return Response({"archived": count})
+
+
 # =============================================================================
 # PORTFOLIO
 # =============================================================================
@@ -627,6 +842,36 @@ class CreateReviewView(generics.CreateAPIView):
         return Response(
             {"detail": "Review submitted successfully!"},
             status=status.HTTP_201_CREATED,
+        )
+
+
+class ReplyReviewView(APIView):
+    """The freelancer who received the review can reply to it once (editable)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        review = get_object_or_404(Review, pk=pk)
+        if review.freelancer != request.user:
+            return Response(
+                {"error": "Only the freelancer this review is about can reply."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        reply = (request.data.get("reply") or "").strip()
+        if not reply:
+            return Response(
+                {"error": "Reply cannot be empty."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        review.reply = reply
+        review.save(update_fields=["reply", "updated_at"])
+        notify(
+            review.reviewer,
+            f"{request.user.display_name} replied to your review.",
+            notification_type="review",
+            link=f"/u/{request.user.username}",
+        )
+        return Response(
+            ReviewSerializer(review, context={"request": request}).data
         )
 
 
@@ -775,6 +1020,23 @@ class AdminStatsView(APIView):
             Job.objects.values_list("status").annotate(count=Count("id"))
         )
 
+        def daily_counts(model, created_field="created_at", days=30):
+            start = (now - timezone.timedelta(days=days - 1)).date()
+            rows = (
+                model.objects.filter(**{f"{created_field}__date__gte": start})
+                .annotate(day=TruncDate(created_field))
+                .values("day")
+                .annotate(count=Count("id"))
+            )
+            counts = {row["day"]: row["count"] for row in rows}
+            return [
+                {
+                    "date": (start + timezone.timedelta(days=i)).isoformat(),
+                    "count": counts.get(start + timezone.timedelta(days=i), 0),
+                }
+                for i in range(days)
+            ]
+
         return Response({
             "total_users": User.objects.count(),
             "students": User.objects.filter(
@@ -802,7 +1064,93 @@ class AdminStatsView(APIView):
             ).count(),
             "total_reviews": Review.objects.count(),
             "avg_rating": round(avg_rating, 2),
+            "signups_last_30d": daily_counts(User, created_field="date_joined"),
+            "applications_last_30d": daily_counts(Application),
         })
+
+
+class AdminUserListView(generics.ListAPIView):
+    """Recent users + search, for admin moderation. Staff only."""
+    serializer_class = AdminVerificationSerializer
+    permission_classes = [permissions.IsAdminUser]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = User.objects.all()
+        search = self.request.query_params.get("search", "")
+        if search:
+            qs = qs.filter(
+                Q(username__icontains=search) |
+                Q(full_name__icontains=search) |
+                Q(email__icontains=search)
+            )
+        return qs.order_by("-date_joined")[:50]
+
+
+class AdminUserActionView(APIView):
+    """Suspend or reactivate a user account. Staff only."""
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, pk):
+        action = request.data.get("action")
+        if action not in ["suspend", "unsuspend"]:
+            return Response(
+                {"error": "Invalid action. Use 'suspend' or 'unsuspend'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user = get_object_or_404(User, pk=pk)
+        if user == request.user:
+            return Response(
+                {"error": "You cannot suspend your own account."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.is_suspended = action == "suspend"
+        user.save(update_fields=["is_suspended", "updated_at"])
+        notify(
+            user,
+            (
+                "Your account was suspended by an admin."
+                if user.is_suspended
+                else "Your account was reactivated by an admin."
+            ),
+            notification_type="system",
+            link="/dashboard",
+        )
+        return Response(
+            AdminVerificationSerializer(user, context={"request": request}).data
+        )
+
+
+class AdminJobListView(generics.ListAPIView):
+    """All jobs (including hidden) for admin moderation. Staff only."""
+    serializer_class = JobSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    def get_queryset(self):
+        return Job.objects.select_related("posted_by").prefetch_related(
+            "required_skills"
+        ).annotate(_application_count=Count("applications")).order_by("-created_at")
+
+
+class JobModerationToggleView(APIView):
+    """Approve/unhide or hide a job. Staff only."""
+    permission_classes = [permissions.IsAdminUser]
+
+    def post(self, request, pk):
+        job = get_object_or_404(Job, pk=pk)
+        job.is_active = not job.is_active
+        job.save(update_fields=["is_active", "updated_at"])
+        notify(
+            job.posted_by,
+            (
+                f"Your job '{job.title}' is now hidden from the job board."
+                if not job.is_active
+                else f"Your job '{job.title}' is live on the job board again."
+            ),
+            notification_type="system",
+            link=f"/jobs/{job.pk}",
+        )
+        return Response(JobSerializer(job, context={"request": request}).data)
 
 
 # =============================================================================
@@ -821,7 +1169,7 @@ class ConversationListView(generics.ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
-        return _user_conversations(self.request.user)
+        return _user_conversations(self.request.user).order_by("-updated_at")
 
 
 class StartConversationView(APIView):
@@ -847,28 +1195,88 @@ class StartConversationView(APIView):
         )
 
 
+class UnreadConversationCountView(APIView):
+    """Total unread incoming messages across all conversations (for the badge)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        count = Message.objects.filter(
+            conversation__in=_user_conversations(request.user),
+            is_read=False,
+        ).exclude(sender=request.user).count()
+        return Response({"count": count})
+
+
+class ConversationPresenceView(APIView):
+    """Report which users are currently online (websocket connected)."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        ids = request.data.get("ids") or []
+        if not isinstance(ids, list):
+            ids = [ids]
+        ids = [int(i) for i in ids if isinstance(i, int) or str(i).isdigit()][:50]
+        presence = {
+            str(i): bool(cache.get(f"presence:{i}"))
+            for i in ids
+        }
+        return Response({"presence": presence})
+
+
 class ConversationDetailView(APIView):
     permission_classes = [permissions.IsAuthenticated]
     throttle_classes = [throttling.ScopedRateThrottle]
     throttle_scope = "message"
+
+    PAGE_SIZE = 30
 
     def get_conversation(self, request, pk):
         return get_object_or_404(_user_conversations(request.user), pk=pk)
 
     def get(self, request, pk):
         conversation = self.get_conversation(request, pk)
-        conversation.messages.filter(
-            is_read=False
-        ).exclude(sender=request.user).update(is_read=True)
+
+        # Mark unread incoming messages as read only on the initial (latest)
+        # page load, and broadcast the receipts so the sender sees "Read".
+        before = request.query_params.get("before")
+        if not before:
+            unread_ids = list(
+                conversation.messages.filter(is_read=False)
+                .exclude(sender=request.user)
+                .values_list("id", flat=True)
+            )
+            if unread_ids:
+                conversation.messages.filter(id__in=unread_ids).update(
+                    is_read=True
+                )
+                self._broadcast_read(conversation, unread_ids)
+
+        qs = conversation.messages.all()
+        if before:
+            qs = qs.filter(id__lt=before)
+        qs = qs.order_by("-id")
+        page = list(qs[: self.PAGE_SIZE])
+        has_more = qs.count() > self.PAGE_SIZE
+        next_before = page[-1].id if has_more else None
+        page.reverse()
+
         return Response({
             "id": conversation.id,
             "other": UserPublicSerializer(
                 conversation.other(request.user), context={"request": request}
             ).data,
-            "messages": MessageSerializer(
-                conversation.messages.all(), many=True
-            ).data,
+            "messages": MessageSerializer(page, many=True).data,
+            "has_more": has_more,
+            "next_before": next_before,
         })
+
+    def _broadcast_read(self, conversation, message_ids):
+        channel_layer = self._get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                f"conversation_{conversation.pk}",
+                {"type": "chat.read", "message_ids": message_ids},
+            )
 
     def post(self, request, pk):
         conversation = self.get_conversation(request, pk)
@@ -893,10 +1301,24 @@ class ConversationDetailView(APIView):
             notification_type="message",
             link=f"/messages/{conversation.pk}",
         )
+
+        # Push the message to anyone live on the websocket channel.
+        channel_layer = self._get_channel_layer()
+        if channel_layer is not None:
+            async_to_sync(channel_layer.group_send)(
+                f"conversation_{conversation.pk}",
+                {"type": "chat.message", "message": MessageSerializer(message).data},
+            )
+
         return Response(
             MessageSerializer(message).data,
             status=status.HTTP_201_CREATED,
         )
+
+    @staticmethod
+    def _get_channel_layer():
+        from channels.layers import get_channel_layer
+        return get_channel_layer()
 
 
 # =============================================================================
@@ -918,6 +1340,18 @@ class CreateReportView(APIView):
             {"detail": "Report submitted. Our team will review it."},
             status=status.HTTP_201_CREATED,
         )
+
+
+class MyReportsView(generics.ListAPIView):
+    """Reports filed by the current user with their review status."""
+    serializer_class = ReportSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        return Report.objects.filter(
+            reporter=self.request.user
+        ).select_related("target_user", "target_job").order_by("-created_at")
 
 
 class ReportListView(generics.ListAPIView):

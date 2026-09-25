@@ -137,6 +137,9 @@ class User(AbstractUser):
     # Dark mode preference
     dark_mode = models.BooleanField(default=False)
 
+    # Moderation: suspended accounts are blocked from API/websocket access.
+    is_suspended = models.BooleanField(default=False)
+
     # Notification preferences
     notification_sound_enabled = models.BooleanField(
         default=True,
@@ -195,3 +198,26 @@ class User(AbstractUser):
             if code == self.school:
                 return name
         return self.school or "Not specified"
+
+
+class FreelancerNote(models.Model):
+    """A private note a client keeps about a saved freelancer."""
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="freelancer_notes",
+    )
+    freelancer = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="notes_from_clients",
+    )
+    note = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ["user", "freelancer"]
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.freelancer.username}"

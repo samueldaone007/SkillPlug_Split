@@ -9,21 +9,26 @@ import { getErrorMessage } from '../utils/format'
 export default function MyJobs() {
   const [jobs, setJobs] = useState([])
   const [loading, setLoading] = useState(true)
+  const [toggling, setToggling] = useState(null)
   const { showToast } = useToast()
+
+  const load = async () => {
+    const { data } = await api.get('/jobs/my-jobs/')
+    setJobs(data.results || data)
+  }
 
   useEffect(() => {
     let cancelled = false
-    const load = async () => {
+    const loadInitial = async () => {
       try {
-        const { data } = await api.get('/jobs/my-jobs/')
-        if (!cancelled) setJobs(data.results || data)
+        await load()
       } catch (err) {
         showToast(getErrorMessage(err), 'error')
       } finally {
         if (!cancelled) setLoading(false)
       }
     }
-    load()
+    loadInitial()
     return () => { cancelled = true }
   }, [])
 
@@ -32,6 +37,7 @@ export default function MyJobs() {
     in_progress: 'badge-yellow',
     completed: 'badge-primary',
     closed: 'badge-gray',
+    draft: 'badge-gray',
   }
 
   if (loading) return <Spinner />
@@ -70,6 +76,49 @@ export default function MyJobs() {
                   <span className={statusColors[job.status] || 'badge-gray'}>
                     {job.status?.split('_').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                   </span>
+                  {job.status === 'draft' && (
+                    <button
+                      type="button"
+                      disabled={toggling === job.id}
+                      onClick={async () => {
+                        setToggling(job.id)
+                        try {
+                          await api.patch(`/jobs/${job.id}/`, { status: 'open' })
+                          showToast('Job published!', 'success')
+                          await load()
+                        } catch (err) {
+                          showToast(getErrorMessage(err), 'error')
+                        } finally {
+                          setToggling(null)
+                        }
+                      }}
+                      className="btn-primary text-xs !py-1.5"
+                    >
+                      {toggling === job.id ? 'Publishing...' : 'Publish'}
+                    </button>
+                  )}
+                  {(job.status === 'completed' || job.status === 'closed') && (
+                    <button
+                      type="button"
+                      disabled={toggling === job.id}
+                      onClick={async () => {
+                        setToggling(job.id)
+                        try {
+                          const { data } = await api.post(`/jobs/${job.id}/repost/`)
+                          showToast('Job reposted!', 'success')
+                          await load()
+                          return data
+                        } catch (err) {
+                          showToast(getErrorMessage(err), 'error')
+                        } finally {
+                          setToggling(null)
+                        }
+                      }}
+                      className="btn-primary text-xs !py-1.5"
+                    >
+                      {toggling === job.id ? 'Reposting...' : 'Repost'}
+                    </button>
+                  )}
                   <Link to={`/jobs/${job.id}/edit`} className="btn-secondary text-xs !py-1.5">
                     Edit
                   </Link>

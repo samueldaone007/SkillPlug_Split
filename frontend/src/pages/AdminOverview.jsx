@@ -20,11 +20,53 @@ const STATUS_COLORS = {
   closed: 'bg-red-500',
 }
 
+function MiniBarChart({ data, color }) {
+  const max = Math.max(...data.map((d) => d.count), 1)
+  const peak = data.reduce((best, d) => (d.count > best.count ? d : best), data[0] || {})
+  return (
+    <div>
+      <div className="flex h-36 items-end gap-[3px]">
+        {data.map((d) => {
+          const h = Math.max(Math.round((d.count / max) * 100), 2)
+          return (
+            <div
+              key={d.date}
+              className="group relative flex flex-1 items-end"
+              title={`${d.date}: ${d.count}`}
+            >
+              <div className={`w-full rounded-t ${color}`} style={{ height: `${h}px` }} />
+              <span className="pointer-events-none absolute -top-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-1.5 py-0.5 text-[10px] text-white group-hover:block dark:bg-gray-600">
+                {d.count}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+      <p className="mt-2 text-xs text-gray-400">
+        Peak: {peak.count} on {peak.date?.slice(5) || '—'}
+      </p>
+    </div>
+  )
+}
+
 export default function AdminOverview() {
   const { isAdmin } = useAuth()
   const { showToast } = useToast()
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [skills, setSkills] = useState([])
+  const [skillsLoading, setSkillsLoading] = useState(true)
+  const [skillForm, setSkillForm] = useState({ name: '', icon: '' })
+  const [addingSkill, setAddingSkill] = useState(false)
+  const [jobs, setJobs] = useState([])
+  const [jobsLoading, setJobsLoading] = useState(true)
+  const [jobsPage, setJobsPage] = useState(null)
+  const [togglingJob, setTogglingJob] = useState(null)
+  const [users, setUsers] = useState([])
+  const [usersLoading, setUsersLoading] = useState(true)
+  const [userSearch, setUserSearch] = useState('')
+  const [suspendTarget, setSuspendTarget] = useState(null)
+  const [archiving, setArchiving] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -41,6 +83,158 @@ export default function AdminOverview() {
     load()
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadSkills = async () => {
+      try {
+        const { data } = await api.get('/skills/')
+        if (!cancelled) setSkills(data)
+      } catch (err) {
+        showToast(getErrorMessage(err), 'error')
+      } finally {
+        if (!cancelled) setSkillsLoading(false)
+      }
+    }
+    loadSkills()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadJobs = async () => {
+      try {
+        const { data } = await api.get('/admin/jobs/')
+        if (!cancelled) {
+          setJobs(data.results || data)
+          setJobsPage(data.next || null)
+        }
+      } catch (err) {
+        showToast(getErrorMessage(err), 'error')
+      } finally {
+        if (!cancelled) setJobsLoading(false)
+      }
+    }
+    loadJobs()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setUsersLoading(true)
+    const loadUsers = async () => {
+      try {
+        const { data } = await api.get('/admin/users/', {
+          params: userSearch ? { search: userSearch } : {},
+        })
+        if (!cancelled) setUsers(data)
+      } catch (err) {
+        showToast(getErrorMessage(err), 'error')
+      } finally {
+        if (!cancelled) setUsersLoading(false)
+      }
+    }
+    const debounce = setTimeout(loadUsers, userSearch ? 300 : 0)
+    return () => {
+      cancelled = true
+      clearTimeout(debounce)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userSearch])
+
+  const handleAddSkill = async (e) => {
+    e.preventDefault()
+    const name = skillForm.name.trim()
+    if (!name) return
+    setAddingSkill(true)
+    try {
+      const { data } = await api.post('/skills/create/', {
+        name,
+        icon: skillForm.icon.trim(),
+      })
+      setSkills((prev) => [...prev, data])
+      setSkillForm({ name: '', icon: '' })
+      setStats((prev) => (prev ? { ...prev, skills_count: (prev.skills_count || 0) + 1 } : prev))
+      showToast(`Skill "${name}" added.`, 'success')
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    } finally {
+      setAddingSkill(false)
+    }
+  }
+
+  const handleDeleteSkill = async (skill) => {
+    try {
+      await api.delete(`/skills/${skill.id}/`)
+      setSkills((prev) => prev.filter((s) => s.id !== skill.id))
+      setStats((prev) => (prev ? { ...prev, skills_count: Math.max(0, (prev.skills_count || 0) - 1) } : prev))
+      showToast(`Skill "${skill.name}" removed.`, 'success')
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    }
+  }
+
+  const archiveStale = async () => {
+    if (!window.confirm('Archive open jobs with no activity for 90+ days? This cannot be undone.')) return
+    setArchiving(true)
+    try {
+      const { data } = await api.post('/admin/jobs/archive-stale/')
+      showToast(
+        data.archived > 0
+          ? `${data.archived} dormant job${data.archived === 1 ? '' : 's'} archived.`
+          : 'No dormant jobs found.',
+        'success'
+      )
+      if (data.archived > 0) {
+        const { data: freshStats } = await api.get('/admin/stats/')
+        setStats(freshStats)
+        const { data: freshJobs } = await api.get('/admin/jobs/')
+        setJobs(freshJobs.results || freshJobs)
+        setJobsPage(freshJobs.next || null)
+      }
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    } finally {
+      setArchiving(false)
+    }
+  }
+
+  const loadMoreJobs = async () => {
+    if (!jobsPage) return
+    try {
+      const { data } = await api.get(jobsPage.replace(import.meta.env.VITE_API_URL || '/api/v1', ''))
+      setJobs((prev) => [...prev, ...(data.results || data)])
+      setJobsPage(data.next || null)
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    }
+  }
+
+  const toggleJob = async (id) => {
+    setTogglingJob(id)
+    try {
+      const { data } = await api.post(`/admin/jobs/${id}/toggle/`)
+      setJobs((prev) => prev.map((j) => (j.id === id ? data : j)))
+      showToast(data.is_active ? 'Job is live on the board.' : 'Job hidden from the board.', 'success')
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    } finally {
+      setTogglingJob(null)
+    }
+  }
+
+  const applyUserAction = async (id, action) => {
+    setSuspendTarget(id)
+    try {
+      const { data } = await api.post(`/admin/users/${id}/action/`, { action })
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, is_suspended: data.is_suspended } : u)))
+      showToast(data.is_suspended ? 'Account suspended.' : 'Account reactivated.', action === 'suspend' ? 'success' : 'success')
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    } finally {
+      setSuspendTarget(null)
+    }
+  }
 
   if (loading) return <Spinner />
 
@@ -92,6 +286,14 @@ export default function AdminOverview() {
             </span>
           )}
         </Link>
+        <button
+          type="button"
+          onClick={archiveStale}
+          disabled={archiving}
+          className="inline-flex items-center rounded-xl border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+        >
+          {archiving ? 'Archiving…' : 'Archive Stale Jobs'}
+        </button>
       </div>
 
       {!stats ? (
@@ -188,8 +390,234 @@ export default function AdminOverview() {
               </div>
             </div>
           </div>
+
+          {/* Growth charts (30 days) */}
+          <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+            <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <h2 className="mb-1 text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                New Signups
+              </h2>
+              <p className="mb-4 text-xs text-gray-400 dark:text-gray-500">Last 30 days</p>
+              {stats.signups_last_30d?.length ? (
+                <MiniBarChart data={stats.signups_last_30d} color="bg-emerald-500" />
+              ) : (
+                <p className="py-8 text-center text-sm text-gray-400">No data yet.</p>
+              )}
+            </div>
+            <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+              <h2 className="mb-1 text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                Job Applications
+              </h2>
+              <p className="mb-4 text-xs text-gray-400 dark:text-gray-500">Last 30 days</p>
+              {stats.applications_last_30d?.length ? (
+                <MiniBarChart data={stats.applications_last_30d} color="bg-primary-500" />
+              ) : (
+                <p className="py-8 text-center text-sm text-gray-400">No data yet.</p>
+              )}
+            </div>
+          </div>
         </>
       )}
+
+      {/* Moderation */}
+      <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-2">
+        {/* Job moderation */}
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Job Moderation
+          </h2>
+          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            Hide or unhide jobs on the public board.
+          </p>
+
+          <div className="mt-4 max-h-96 overflow-y-auto pr-1">
+            {jobsLoading ? (
+              <div className="py-8"><Spinner /></div>
+            ) : jobs.length === 0 ? (
+              <p className="py-6 text-center text-sm text-gray-400 dark:text-gray-500">No jobs yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {jobs.map((job) => (
+                  <li
+                    key={job.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 dark:border-gray-700 dark:bg-gray-900/40"
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        to={`/jobs/${job.id}`}
+                        className="block truncate text-sm font-medium text-gray-800 hover:text-primary-600 dark:text-gray-200"
+                      >
+                        {job.title}
+                      </Link>
+                      <p className="truncate text-xs text-gray-400">
+                        {job.posted_by?.display_name} · {job.application_count} applications
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_LABELS[job.status] ? '' : ''} ${
+                        job.is_active ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                      }`}>
+                        {job.is_active ? 'Live' : 'Hidden'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => toggleJob(job.id)}
+                        disabled={togglingJob === job.id}
+                        className="rounded-lg px-2.5 py-1 text-xs font-medium text-primary-600 hover:bg-primary-50 disabled:opacity-50 dark:text-primary-400 dark:hover:bg-primary-900/30"
+                      >
+                        {togglingJob === job.id ? '…' : job.is_active ? 'Hide' : 'Unhide'}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {jobsPage && (
+            <button
+              type="button"
+              onClick={loadMoreJobs}
+              className="mt-3 w-full text-center text-xs font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400"
+            >
+              Load more jobs
+            </button>
+          )}
+        </div>
+
+        {/* User management */}
+        <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            User Management
+          </h2>
+          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            Search accounts and suspend or reactivate them.
+          </p>
+
+          <input
+            type="search"
+            className="input mt-4"
+            placeholder="Search by name, username, or email..."
+            value={userSearch}
+            onChange={(e) => setUserSearch(e.target.value)}
+          />
+
+          <div className="mt-4 max-h-[26rem] overflow-y-auto pr-1">
+            {usersLoading ? (
+              <div className="py-8"><Spinner /></div>
+            ) : users.length === 0 ? (
+              <p className="py-6 text-center text-sm text-gray-400 dark:text-gray-500">No users found.</p>
+            ) : (
+              <ul className="space-y-2">
+                {users.map((u) => (
+                  <li
+                    key={u.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-gray-50 px-3 py-2.5 dark:border-gray-700 dark:bg-gray-900/40"
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        to={`/u/${u.username}`}
+                        className="block truncate text-sm font-medium text-gray-800 hover:text-primary-600 dark:text-gray-200"
+                      >
+                        {u.display_name}
+                        {u.verified && (
+                          <span className="ml-1 text-xs text-green-600 dark:text-green-400">✓</span>
+                        )}
+                      </Link>
+                      <p className="truncate text-xs text-gray-400">
+                        @{u.username} · {u.school_display || u.email}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {u.is_suspended && (
+                        <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:bg-red-900/30 dark:text-red-300">
+                          Suspended
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => applyUserAction(u.id, u.is_suspended ? 'unsuspend' : 'suspend')}
+                        disabled={suspendTarget === u.id}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-medium disabled:opacity-50 ${
+                          u.is_suspended
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-300'
+                            : 'bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400'
+                        }`}
+                      >
+                        {suspendTarget === u.id ? '…' : u.is_suspended ? 'Reactivate' : 'Suspend'}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Skills management */}
+      <div className="mt-8 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+            Skills Management
+          </h2>
+          <p className="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            Add and remove the skills students can list on their profiles.
+          </p>
+        </div>
+
+        <form onSubmit={handleAddSkill} className="mb-5 flex flex-col gap-3 sm:flex-row">
+          <input
+            type="text"
+            className="input flex-1"
+            placeholder="Skill name (e.g. Makeup Artist)"
+            value={skillForm.name}
+            onChange={(e) => setSkillForm((prev) => ({ ...prev, name: e.target.value }))}
+            required
+          />
+          <input
+            type="text"
+            className="input sm:w-28"
+            placeholder="Emoji"
+            value={skillForm.icon}
+            onChange={(e) => setSkillForm((prev) => ({ ...prev, icon: e.target.value }))}
+          />
+          <button type="submit" className="btn-primary sm:w-auto" disabled={addingSkill}>
+            {addingSkill ? 'Adding…' : 'Add Skill'}
+          </button>
+        </form>
+
+        {skillsLoading ? (
+          <div className="py-6"><Spinner /></div>
+        ) : skills.length === 0 ? (
+          <p className="py-4 text-center text-sm text-gray-400 dark:text-gray-500">
+            No skills yet. Add your first one above.
+          </p>
+        ) : (
+          <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {skills.map((skill) => (
+              <li
+                key={skill.id}
+                className="flex items-center justify-between gap-2 rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/40"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  {skill.icon && <span className="text-lg leading-none">{skill.icon}</span>}
+                  <span className="truncate text-sm font-medium text-gray-800 dark:text-gray-200">
+                    {skill.name}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSkill(skill)}
+                  className="shrink-0 rounded-lg px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }
