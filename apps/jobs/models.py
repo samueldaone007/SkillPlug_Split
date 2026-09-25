@@ -19,6 +19,7 @@ class Job(models.Model):
         ("in_progress", "In Progress"),
         ("completed", "Completed"),
         ("closed", "Closed"),
+        ("draft", "Draft"),
     ]
     
     # Budget type
@@ -132,6 +133,7 @@ class Application(models.Model):
         ("pending", "Pending"),
         ("accepted", "Accepted"),
         ("rejected", "Rejected"),
+        ("invited", "Invited"),
     ]
     
     student = models.ForeignKey(

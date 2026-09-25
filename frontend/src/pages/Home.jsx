@@ -5,11 +5,13 @@ import { useAuth } from '../context/AuthContext'
 import FreelancerCard from '../components/FreelancerCard'
 import Spinner from '../components/Spinner'
 import { getProfileImageUrl, getInitials } from '../utils/format'
+import { usePageMeta } from '../hooks/usePageMeta'
 
 export default function Home() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const { isAuthenticated } = useAuth()
+  usePageMeta(null, 'SkillPlug connects you with verified Nigerian student freelancers for design, development, writing and more.')
 
   useEffect(() => {
     let cancelled = false

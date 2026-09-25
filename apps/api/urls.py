@@ -30,6 +30,7 @@ urlpatterns = [
     path("users/saved/", views.SavedFreelancersView.as_view(), name="api_saved_freelancers"),
     path("users/<str:username>/", views.PublicProfileView.as_view(), name="api_user_detail"),
     path("users/<str:username>/save/", views.ToggleSaveFreelancerView.as_view(), name="api_toggle_save"),
+    path("users/<str:username>/note/", views.FreelancerNoteView.as_view(), name="api_freelancer_note"),
     path("users/<str:username>/portfolio/", views.UserPortfolioView.as_view(), name="api_user_portfolio"),
 
     # Admin - student verification
@@ -40,6 +41,11 @@ urlpatterns = [
         name="api_admin_verification_decision",
     ),
     path("admin/stats/", views.AdminStatsView.as_view(), name="api_admin_stats"),
+    path("admin/users/", views.AdminUserListView.as_view(), name="api_admin_users"),
+    path("admin/users/<int:pk>/action/", views.AdminUserActionView.as_view(), name="api_admin_user_action"),
+    path("admin/jobs/", views.AdminJobListView.as_view(), name="api_admin_jobs"),
+    path("admin/jobs/<int:pk>/toggle/", views.JobModerationToggleView.as_view(), name="api_admin_job_toggle"),
+    path("admin/jobs/archive-stale/", views.JobArchiveStaleView.as_view(), name="api_admin_job_archive_stale"),
 
     # Notifications
     path("notifications/", views.NotificationListView.as_view(), name="api_notifications"),
@@ -49,11 +55,14 @@ urlpatterns = [
 
     # Chat
     path("conversations/", views.ConversationListView.as_view(), name="api_conversations"),
+    path("conversations/unread-count/", views.UnreadConversationCountView.as_view(), name="api_conversations_unread_count"),
+    path("conversations/presence/", views.ConversationPresenceView.as_view(), name="api_conversation_presence"),
     path("conversations/start/<str:username>/", views.StartConversationView.as_view(), name="api_conversation_start"),
     path("conversations/<int:pk>/", views.ConversationDetailView.as_view(), name="api_conversation_detail"),
 
     # Moderation
     path("reports/", views.CreateReportView.as_view(), name="api_report_create"),
+    path("reports/my/", views.MyReportsView.as_view(), name="api_my_reports"),
     path("admin/reports/", views.ReportListView.as_view(), name="api_admin_reports"),
     path("admin/reports/<int:pk>/action/", views.ReportActionView.as_view(), name="api_admin_report_action"),
 
@@ -65,6 +74,8 @@ urlpatterns = [
 
     # Skills
     path("skills/", views.SkillListView.as_view(), name="api_skill_list"),
+    path("skills/create/", views.SkillAdminCreateView.as_view(), name="api_skill_create"),
+    path("skills/<int:pk>/", views.SkillDeleteView.as_view(), name="api_skill_delete"),
 
     # Freelancers / Marketplace
     path("freelancers/", views.FreelancerListView.as_view(), name="api_freelancer_list"),
@@ -75,6 +86,9 @@ urlpatterns = [
     path("jobs/create/", views.JobCreateView.as_view(), name="api_job_create"),
     path("jobs/<int:pk>/", views.JobDetailView.as_view(), name="api_job_detail"),
     path("jobs/<int:pk>/apply/", views.ApplyJobView.as_view(), name="api_job_apply"),
+    path("jobs/<int:pk>/invite/<int:user_id>/", views.JobInviteView.as_view(), name="api_job_invite"),
+    path("jobs/<int:pk>/invitations/<int:app_id>/respond/", views.InvitationRespondView.as_view(), name="api_invitation_respond"),
+    path("jobs/<int:pk>/repost/", views.JobRepostView.as_view(), name="api_job_repost"),
     path("jobs/<int:pk>/applications/", views.JobApplicationsView.as_view(), name="api_job_applications"),
     path("jobs/<int:pk>/status/<str:app_status>/", views.UpdateApplicationStatusView.as_view(), name="api_application_status"),
     path("jobs/my-jobs/", views.MyJobsView.as_view(), name="api_my_jobs"),
@@ -87,4 +101,5 @@ urlpatterns = [
     # Reviews
     path("reviews/<str:username>/", views.FreelancerReviewsView.as_view(), name="api_reviews"),
     path("reviews/<str:username>/create/", views.CreateReviewView.as_view(), name="api_create_review"),
+    path("reviews/<int:pk>/reply/", views.ReplyReviewView.as_view(), name="api_review_reply"),
 ]

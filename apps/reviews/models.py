@@ -31,6 +31,10 @@ class Review(models.Model):
         blank=True,
         help_text="Share your experience working with this freelancer",
     )
+    reply = models.TextField(
+        blank=True,
+        help_text="Freelancer's reply to this review",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     

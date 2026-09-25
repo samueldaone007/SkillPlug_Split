@@ -86,3 +86,33 @@
 .animate-fade-in {
   animation: fadeIn 0.3s ease-in-out;
 }
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.animate-slide-in-right {
+  animation: slideInRight 0.25s ease-out;
+}
+
+/* Accessible focus indicators for custom controls (links, buttons, icons) */
+:focus-visible {
+  outline: 2px solid var(--tw-ring-color, rgb(99 102 241));
+  outline-offset: 2px;
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

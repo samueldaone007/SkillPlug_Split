@@ -2,12 +2,17 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import api from '../api/client'
 import Spinner from '../components/Spinner'
+import ImageLightbox from '../components/ImageLightbox'
+import ShareButton from '../components/ShareButton'
+import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
 import { getErrorMessage } from '../utils/format'
 
 export default function PortfolioManage() {
+  const { user } = useAuth()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
+  const [lightbox, setLightbox] = useState(null)
   const navigate = useNavigate()
   const { showToast } = useToast()
 
@@ -64,7 +69,14 @@ export default function PortfolioManage() {
           {items.map((item) => (
             <div key={item.id} className="card overflow-hidden">
               {item.image && (
-                <img src={item.image} alt={item.title} className="h-40 w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setLightbox(item.image)}
+                  className="block w-full cursor-zoom-in"
+                  aria-label={`View ${item.title} image`}
+                >
+                  <img src={item.image} alt={item.title} loading="lazy" className="h-40 w-full object-cover" />
+                </button>
               )}
               <div className="p-4">
                 <h3 className="font-semibold text-gray-900 dark:text-white">{item.title}</h3>
@@ -83,6 +95,11 @@ export default function PortfolioManage() {
                   <button type="button" onClick={() => handleDelete(item.id)} className="btn-danger text-xs !py-1.5">
                     Delete
                   </button>
+                  <ShareButton
+                    path={`/u/${user?.username}?item=${item.id}`}
+                    label=""
+                    className="ml-auto rounded-lg p-2 text-xs text-gray-400 hover:text-primary-600 dark:text-gray-500 dark:hover:text-primary-400"
+                  />
                 </div>
               </div>
             </div>
@@ -95,6 +112,8 @@ export default function PortfolioManage() {
           ← Back to Dashboard
         </Link>
       </p>
+
+      <ImageLightbox src={lightbox} alt="Portfolio image" onClose={() => setLightbox(null)} />
     </div>
   )
 }

@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import api from '../api/client'
 import FreelancerCard from '../components/FreelancerCard'
-import Spinner from '../components/Spinner'
+import Skeleton from '../components/Skeleton'
 import { useToast } from '../components/Toast'
 import { getErrorMessage } from '../utils/format'
+import { usePageMeta } from '../hooks/usePageMeta'
 
 const AVAILABILITY = [
   { value: '', label: 'All Availability' },
@@ -17,6 +18,12 @@ const SORTS = [
   { value: 'recent', label: 'Recently Joined' },
   { value: 'rating', label: 'Top Rated' },
   { value: 'name', label: 'Name' },
+]
+
+const MIN_RATINGS = [
+  { value: '', label: 'Any Rating' },
+  { value: '4', label: '4 stars & up' },
+  { value: '3', label: '3 stars & up' },
 ]
 
 export default function Freelancers() {
@@ -36,7 +43,10 @@ export default function Freelancers() {
   const skill = searchParams.get('skill') || ''
   const availability = searchParams.get('availability') || ''
   const verified = searchParams.get('verified') === 'true'
+  const department = searchParams.get('department') || ''
+  const minRating = searchParams.get('min_rating') || ''
   const sort = searchParams.get('sort') || 'recent'
+  usePageMeta('Browse Freelancers', 'Find verified Nigerian student talent for your next project.')
 
   useEffect(() => {
     let cancelled = false
@@ -49,6 +59,8 @@ export default function Freelancers() {
         if (skill) params.skill = skill
         if (availability) params.availability = availability
         if (verified) params.verified = 'true'
+        if (department) params.department = department
+        if (minRating) params.min_rating = minRating
         if (sort) params.sort = sort
 
         const [{ data }, skillsRes] = await Promise.all([
@@ -70,7 +82,7 @@ export default function Freelancers() {
     load()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, school, skill, availability, verified, sort])
+  }, [search, school, skill, availability, verified, department, minRating, sort])
 
   const initUniversities = () => [
     'University of Lagos (UNILAG)', 'University of Ibadan (UI)', 'Obafemi Awolowo University (OAU)',
@@ -86,7 +98,8 @@ export default function Freelancers() {
       if (value) params[key] = value
       else delete params[key]
     })
-    if (!params.school && !params.search && !params.skill && !params.availability && !params.sort) {
+    if (!params.school && !params.search && !params.skill && !params.availability
+        && !params.department && !params.min_rating && !params.sort) {
       setSearchParams({})
     } else {
       setSearchParams(params)
@@ -118,7 +131,7 @@ export default function Freelancers() {
 
       {/* Search & Filters */}
       <div className="card mb-6 p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-6">
           <div className="lg:col-span-2">
             <input
               type="search"
@@ -137,6 +150,13 @@ export default function Freelancers() {
               <option key={a.value} value={a.value}>{a.label}</option>
             ))}
           </select>
+          <input
+            type="search"
+            className="input"
+            placeholder="Department (e.g. Design)"
+            value={department}
+            onChange={(e) => updateParams({ department: e.target.value })}
+          />
           <select
             className="input"
             value={sort}
@@ -146,6 +166,18 @@ export default function Freelancers() {
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>
+          <select
+            className="input"
+            value={minRating}
+            onChange={(e) => updateParams({ min_rating: e.target.value })}
+          >
+            {MIN_RATINGS.map((r) => (
+              <option key={r.value} value={r.value}>{r.label}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-4">
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -155,30 +187,47 @@ export default function Freelancers() {
             />
             <span className="text-sm text-gray-700 dark:text-gray-300">Verified only</span>
           </label>
+          {(skill || school || department) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {skill && (
+                <button
+                  type="button"
+                  onClick={() => updateParams({ skill: '' })}
+                  className="badge-primary"
+                >
+                  {skill} ×
+                </button>
+              )}
+              {school && (
+                <button
+                  type="button"
+                  onClick={() => updateParams({ school: '' })}
+                  className="badge-primary"
+                >
+                  {school} ×
+                </button>
+              )}
+              {department && (
+                <button
+                  type="button"
+                  onClick={() => updateParams({ department: '' })}
+                  className="badge-primary"
+                >
+                  {department} ×
+                </button>
+              )}
+              {minRating && (
+                <button
+                  type="button"
+                  onClick={() => updateParams({ min_rating: '' })}
+                  className="badge-primary"
+                >
+                  {minRating}+ stars ×
+                </button>
+              )}
+            </div>
+          )}
         </div>
-
-        {(skill || school) && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {skill && (
-              <button
-                type="button"
-                onClick={() => updateParams({ skill: '' })}
-                className="badge-primary"
-              >
-                {skill} ×
-              </button>
-            )}
-            {school && (
-              <button
-                type="button"
-                onClick={() => updateParams({ school: '' })}
-                className="badge-primary"
-              >
-                {school} ×
-              </button>
-            )}
-          </div>
-        )}
 
         {skills.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-1.5">
@@ -209,7 +258,24 @@ export default function Freelancers() {
       )}
 
       {loading ? (
-        <Spinner />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="card p-4">
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-16 w-16 rounded-full !border-0" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-3 w-3/4" />
+                  <Skeleton className="h-3 w-1/3" />
+                </div>
+              </div>
+              <div className="mt-4 space-y-2">
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : freelancers.length === 0 ? (
         <div className="card p-10 text-center">
           <p className="text-gray-500 dark:text-gray-400">No freelancers match your search.</p>

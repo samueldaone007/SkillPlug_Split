@@ -86,22 +86,24 @@ export default function JobForm({ edit: _edit }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    const status = e.nativeEvent.submitter?.value || form.status
     setError('')
     setSaving(true)
     try {
       const payload = {
         ...form,
+        status,
         budget_min: form.budget_min || null,
         budget_max: form.budget_max || null,
       }
       if (isEditing) {
         await api.put(`/jobs/${id}/`, payload)
-        showToast('Job updated successfully!', 'success')
-        navigate(`/jobs/${id}`)
+        showToast(status === 'draft' ? 'Draft saved!' : 'Job updated successfully!', 'success')
+        navigate(status === 'draft' ? '/my-jobs' : `/jobs/${id}`)
       } else {
         const { data } = await api.post('/jobs/create/', payload)
-        showToast('Job posted successfully!', 'success')
-        navigate(`/jobs/${data.id}`)
+        showToast(status === 'draft' ? 'Draft saved!' : 'Job posted successfully!', 'success')
+        navigate(status === 'draft' ? '/my-jobs' : `/jobs/${data.id}`)
       }
     } catch (err) {
       setError(getErrorMessage(err))
@@ -274,9 +276,12 @@ export default function JobForm({ edit: _edit }) {
             </div>
           </div>
 
-          <div className="flex gap-3">
-            <button type="submit" className="btn-primary flex-1" disabled={saving}>
-              {saving ? 'Saving...' : isEditing ? 'Update Job' : 'Post Job'}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <button type="submit" name="status" value="open" className="btn-primary flex-1" disabled={saving}>
+              {saving ? 'Saving...' : isEditing ? 'Publish / Update' : 'Post Job'}
+            </button>
+            <button type="submit" name="status" value="draft" className="btn-secondary flex-1" disabled={saving}>
+              {saving ? 'Saving...' : 'Save as Draft'}
             </button>
             <Link to={isEditing ? `/jobs/${id}` : '/jobs'} className="btn-secondary">
               Cancel

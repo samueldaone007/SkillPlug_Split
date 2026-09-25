@@ -3,15 +3,21 @@ import { useSearchParams, Link } from 'react-router-dom'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import JobCard from '../components/JobCard'
-import Spinner from '../components/Spinner'
+import Skeleton from '../components/Skeleton'
 import { getErrorMessage } from '../utils/format'
 import { useToast } from '../components/Toast'
+import { usePageMeta } from '../hooks/usePageMeta'
 
 const BUDGET_TYPES = [
   { value: '', label: 'All Budget Types' },
   { value: 'fixed', label: 'Fixed Price' },
   { value: 'hourly', label: 'Hourly Rate' },
   { value: 'negotiable', label: 'Negotiable' },
+]
+
+const SORTS = [
+  { value: '', label: 'Newest First' },
+  { value: 'applications', label: 'Most Applications' },
 ]
 
 export default function Jobs() {
@@ -27,6 +33,9 @@ export default function Jobs() {
   const search = searchParams.get('search') || ''
   const budgetType = searchParams.get('budget_type') || ''
   const skill = searchParams.get('skill') || ''
+  const location = searchParams.get('location') || ''
+  const sort = searchParams.get('sort') || ''
+  usePageMeta('Job Board', 'Find freelance jobs posted by clients and hire verified Nigerian student talent.')
 
   useEffect(() => {
     let cancelled = false
@@ -37,6 +46,8 @@ export default function Jobs() {
         if (search) params.search = search
         if (budgetType) params.budget_type = budgetType
         if (skill) params.skill = skill
+        if (location) params.location = location
+        if (sort) params.sort = sort
 
         const [jobsRes, skillsRes] = await Promise.all([
           api.get('/jobs/', { params }),
@@ -55,7 +66,7 @@ export default function Jobs() {
     load()
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, budgetType, skill])
+  }, [search, budgetType, skill, location, sort])
 
   const updateParams = (updates) => {
     const params = Object.fromEntries(searchParams.entries())
@@ -93,13 +104,20 @@ export default function Jobs() {
 
       {/* Filters */}
       <div className="card mb-6 p-4">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
           <input
             type="search"
             className="input"
             placeholder="Search jobs by title, description, or skill..."
             value={search}
             onChange={(e) => updateParams({ search: e.target.value })}
+          />
+          <input
+            type="search"
+            className="input"
+            placeholder="Location (e.g. Lagos)"
+            value={location}
+            onChange={(e) => updateParams({ location: e.target.value })}
           />
           <select
             className="input"
@@ -120,6 +138,15 @@ export default function Jobs() {
               <option key={s.id} value={s.name}>{s.name}</option>
             ))}
           </select>
+          <select
+            className="input"
+            value={sort}
+            onChange={(e) => updateParams({ sort: e.target.value })}
+          >
+            {SORTS.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -130,7 +157,24 @@ export default function Jobs() {
       )}
 
       {loading ? (
-        <Spinner />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="card p-5">
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-1/3" />
+                <Skeleton className="h-6 w-3/4" />
+              </div>
+              <div className="mt-3 space-y-2">
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-2/3" />
+              </div>
+              <div className="mt-4 flex items-center justify-between">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </div>
+          ))}
+        </div>
       ) : jobs.length === 0 ? (
         <div className="card p-10 text-center">
           <p className="text-gray-500 dark:text-gray-400">No jobs match your search.</p>

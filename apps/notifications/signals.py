@@ -2,9 +2,47 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 
-from .models import notify
+from .models import Notification, notify
 
 User = get_user_model()
+
+
+@receiver(post_save, sender=Notification)
+def push_notification_to_user(sender, instance, created, **kwargs):
+    """Realtime push of a fresh notification onto the user's websocket group.
+
+    The frontend NotificationsContext opens a `/ws/notifications/` socket and
+    refreshes instantly when this event arrives; the REST poll remains as a
+    fallback.
+    """
+    if not created or instance.user_id is None:
+        return
+    try:
+        from asgiref.sync import async_to_sync
+        from channels.layers import get_channel_layer
+
+        channel_layer = get_channel_layer()
+    except Exception:
+        return
+    if channel_layer is None:
+        return
+
+    payload = {
+        "id": instance.id,
+        "message": instance.message,
+        "notification_type": instance.notification_type,
+        "link": instance.link,
+        "is_read": instance.is_read,
+        "created_at": instance.created_at.isoformat() if instance.created_at else None,
+    }
+    try:
+        async_to_sync(channel_layer.group_send)(
+            f"user_{instance.user_id}",
+            {"type": "notification.message", "notification": payload},
+        )
+    except Exception:
+        # The push is best-effort; the REST poll still picks the row up.
+        pass
 
 
 @receiver(pre_save, sender=User)

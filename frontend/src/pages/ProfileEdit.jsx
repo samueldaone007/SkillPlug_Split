@@ -24,6 +24,7 @@ export default function ProfileEdit() {
   const { showToast } = useToast()
   const navigate = useNavigate()
   const [skills, setSkills] = useState([])
+  const [skillSelect, setSkillSelect] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -79,16 +80,22 @@ export default function ProfileEdit() {
     }
   }
 
-  const toggleSkill = (skillId) => {
+  const addSkill = (e) => {
+    const skillId = Number(e.target.value)
+    setSkillSelect('')
+    if (!skillId) return
     setForm((prev) => {
       const current = Array.isArray(prev.skills) ? prev.skills : []
-      return {
-        ...prev,
-        skills: current.includes(skillId)
-          ? current.filter((id) => id !== skillId)
-          : [...current, skillId],
-      }
+      if (current.includes(skillId)) return prev
+      return { ...prev, skills: [...current, skillId] }
     })
+  }
+
+  const removeSkill = (skillId) => {
+    setForm((prev) => ({
+      ...prev,
+      skills: (Array.isArray(prev.skills) ? prev.skills : []).filter((id) => id !== skillId),
+    }))
   }
 
   const handleSubmit = async (e) => {
@@ -224,27 +231,52 @@ export default function ProfileEdit() {
           {isStudent && (
             <>
               <div>
-                <label className="label">Your Skills</label>
-                <div className="flex flex-wrap gap-2">
-                  {skills.map((skill) => {
-                    const selected = (form.skills || []).includes(skill.id)
-                    return (
-                      <button
-                        key={skill.id}
-                        type="button"
-                        onClick={() => toggleSkill(skill.id)}
-                        className={`rounded-full border px-3 py-1.5 text-sm font-medium transition-colors ${
-                          selected
-                            ? 'border-primary-600 bg-primary-600 text-white'
-                            : 'border-gray-300 bg-white text-gray-700 hover:border-primary-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300'
-                        }`}
-                      >
-                        {skill.icon && <span className="mr-1">{skill.icon}</span>}
-                        {skill.name}
-                      </button>
-                    )
-                  })}
-                </div>
+                <label className="label" htmlFor="skills">Your Skills</label>
+                <select
+                  id="skills"
+                  name="skills"
+                  className="input"
+                  value={skillSelect}
+                  onChange={addSkill}
+                >
+                  <option value="">Select a skill to add...</option>
+                  {skills
+                    .filter((skill) => !(form.skills || []).includes(skill.id))
+                    .map((skill) => (
+                      <option key={skill.id} value={skill.id}>
+                        {skill.icon ? `${skill.icon} ` : ''}{skill.name}
+                      </option>
+                    ))}
+                </select>
+                <p className="mt-1 text-xs text-gray-400">
+                  Choose from the list to add a skill.
+                </p>
+                {(form.skills || []).length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {(form.skills || [])
+                      .map((id) => skills.find((s) => s.id === id))
+                      .filter(Boolean)
+                      .map((skill) => (
+                        <span
+                          key={skill.id}
+                          className="inline-flex items-center gap-1 rounded-full border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300"
+                        >
+                          {skill.icon && <span>{skill.icon}</span>}
+                          {skill.name}
+                          <button
+                            type="button"
+                            onClick={() => removeSkill(skill.id)}
+                            className="ml-0.5 text-gray-400 transition-colors hover:text-red-500"
+                            aria-label={`Remove ${skill.name}`}
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                  </div>
+                )}
               </div>
 
               <div>

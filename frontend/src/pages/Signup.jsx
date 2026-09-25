@@ -127,10 +127,10 @@ export default function Signup({ edit: _edit }) {
                 name="password"
                 type="password"
                 required
-                minLength={6}
+                minLength={8}
                 autoComplete="new-password"
                 className="input"
-                placeholder="Minimum 6 characters"
+                placeholder="Minimum 8 characters"
                 value={form.password}
                 onChange={handleChange}
               />

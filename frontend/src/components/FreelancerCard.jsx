@@ -30,6 +30,7 @@ export default function FreelancerCard({ freelancer }) {
               <img
                 src={getProfileImageUrl(freelancer.profile_image)}
                 alt={freelancer.display_name}
+                loading="lazy"
                 className="h-16 w-16 rounded-full object-cover ring-2 ring-primary-100 dark:ring-primary-900"
               />
             ) : (
@@ -56,6 +57,16 @@ export default function FreelancerCard({ freelancer }) {
                 <span className="text-xs text-gray-400 dark:text-gray-500">
                   ({freelancer.review_count})
                 </span>
+                {freelancer.badges?.length > 0 && (
+                  <span className="flex items-center gap-0.5 text-sm" title={freelancer.badges.map((b) => b.label).join(', ')}>
+                    {freelancer.badges.slice(0, 3).map((badge) => (
+                      <span key={badge.key} role="img" aria-label={badge.label} title={badge.label}>{badge.icon || '🏅'}</span>
+                    ))}
+                    {freelancer.badges.length > 3 && (
+                      <span className="text-xs text-gray-400 dark:text-gray-500">+{freelancer.badges.length - 3}</span>
+                    )}
+                  </span>
+                )}
               </div>
             </div>
           </div>

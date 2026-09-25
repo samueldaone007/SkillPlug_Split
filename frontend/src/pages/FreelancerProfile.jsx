@@ -7,7 +7,10 @@ import Spinner from '../components/Spinner'
 import StarRating from '../components/StarRating'
 import SaveButton from '../components/SaveButton'
 import ReportButton from '../components/ReportButton'
+import ImageLightbox from '../components/ImageLightbox'
+import ShareButton from '../components/ShareButton'
 import { getErrorMessage, getProfileImageUrl, getInitials, formatRelativeTime } from '../utils/format'
+import { usePageMeta } from '../hooks/usePageMeta'
 
 export default function FreelancerProfile() {
   const { username } = useParams()
@@ -22,6 +25,15 @@ export default function FreelancerProfile() {
   const [reviewForm, setReviewForm] = useState({ rating: 5, comment: '' })
   const [reviewing, setReviewing] = useState(false)
   const [hasReviewed, setHasReviewed] = useState(false)
+  const [lightbox, setLightbox] = useState(null)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [inviteJobs, setInviteJobs] = useState([])
+  const [inviteJobId, setInviteJobId] = useState('')
+  const [inviting, setInviting] = useState(false)
+  const [replyingTo, setReplyingTo] = useState(null)
+  const [replyText, setReplyText] = useState('')
+  const [replying, setReplying] = useState(false)
+  usePageMeta(freelancer ? `${freelancer.display_name} - Student Freelancer` : null, freelancer?.bio?.slice(0, 160))
 
   useEffect(() => {
     let cancelled = false
@@ -67,6 +79,53 @@ export default function FreelancerProfile() {
     }
   }
 
+  const openInvite = async () => {
+    try {
+      const { data } = await api.get('/jobs/my-jobs/')
+      const openJobs = (data.results || data).filter((j) => j.status === 'open')
+      setInviteJobs(openJobs)
+      setInviteJobId(openJobs[0]?.id ? String(openJobs[0].id) : '')
+      setInviteOpen(true)
+      if (openJobs.length === 0) {
+        showToast('You need an open job to invite this freelancer.', 'warning')
+      }
+    } catch {
+      showToast('Could not load your jobs.', 'error')
+    }
+  }
+
+  const handleInvite = async (e) => {
+    e.preventDefault()
+    if (!inviteJobId) return
+    setInviting(true)
+    try {
+      await api.post(`/jobs/${inviteJobId}/invite/${freelancer.id}/`)
+      showToast(`${freelancer.display_name} has been invited to apply!`, 'success')
+      setInviteOpen(false)
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    } finally {
+      setInviting(false)
+    }
+  }
+
+  const submitReply = async (reviewId) => {
+    if (!replyText.trim()) return
+    setReplying(true)
+    try {
+      await api.post(`/reviews/${reviewId}/reply/`, { reply: replyText.trim() })
+      showToast('Reply posted.', 'success')
+      setReplyText('')
+      setReplyingTo(null)
+      const reviewsRes = await api.get(`/reviews/${username}/`)
+      setReviews(reviewsRes.data.results || reviewsRes.data)
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    } finally {
+      setReplying(false)
+    }
+  }
+
   const handleReviewSubmit = async (e) => {
     e.preventDefault()
     setReviewing(true)
@@ -97,6 +156,7 @@ export default function FreelancerProfile() {
   const canReview = currentUser && !isOwnProfile && !hasReviewed
 
   return (
+    <>
     <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Profile header */}
       <div className="card overflow-hidden">
@@ -148,6 +208,15 @@ export default function FreelancerProfile() {
               {currentUser && !isOwnProfile && (
                 <ReportButton targetType="profile" targetId={freelancer.id} />
               )}
+              {isClient && !isOwnProfile && (
+                <button type="button" onClick={openInvite} className="btn-secondary">
+                  <svg className="mr-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  </svg>
+                  Invite to Apply
+                </button>
+              )}
+              <ShareButton path={`/u/${freelancer.username}`} label="Share" className="btn-secondary" />
               {freelancer.whatsapp_link && (
                 <a
                   href={freelancer.whatsapp_link}
@@ -175,6 +244,15 @@ export default function FreelancerProfile() {
                freelancer.availability_status === 'busy' ? 'Currently Busy' : 'Not Available'}
             </span>
             <span className="badge-gray">{freelancer.portfolio_count} portfolio items</span>
+            {freelancer.badges?.length > 0 && (
+              <span className="flex items-center gap-1.5 text-base" title={freelancer.badges.map((b) => b.label).join(', ')}>
+                {freelancer.badges.map((badge) => (
+                  <span key={badge.key} role="img" aria-label={badge.label} title={badge.label} className="cursor-help text-lg">
+                    {badge.icon || '🏅'}
+                  </span>
+                ))}
+              </span>
+            )}
           </div>
 
           {freelancer.skills?.length > 0 && (
@@ -207,14 +285,25 @@ export default function FreelancerProfile() {
               {portfolio.map((item) => (
                 <div key={item.id} className="card overflow-hidden">
                   {item.image && (
-                    <img
-                      src={item.image}
-                      alt={item.title}
-                      className="h-40 w-full object-cover"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setLightbox(item.image)}
+                      className="block w-full cursor-zoom-in"
+                      aria-label={`View ${item.title} image`}
+                    >
+                      <img
+                        src={item.image}
+                        alt={item.title}
+                        loading="lazy"
+                        className="h-40 w-full object-cover"
+                      />
+                    </button>
                   )}
                   <div className="p-4">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">{item.title}</h3>
+                    <div className="flex items-start justify-between gap-2">
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{item.title}</h3>
+                      <ShareButton path={`/u/${freelancer.username}?item=${item.id}`} label="" className="p-1.5 text-gray-400 hover:text-primary-600 dark:text-gray-500 dark:hover:text-primary-400" />
+                    </div>
                     {item.description && (
                       <p className="mt-1 text-sm text-gray-500 dark:text-gray-400 line-clamp-2">{item.description}</p>
                     )}
@@ -295,6 +384,50 @@ export default function FreelancerProfile() {
                   {review.comment && (
                     <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{review.comment}</p>
                   )}
+                  {review.reply && (
+                    <div className="mt-3 rounded-xl border-l-2 border-primary-400 bg-primary-50 p-3 dark:bg-primary-900/20">
+                      <p className="text-xs font-semibold text-primary-700 dark:text-primary-300">
+                        Reply from {freelancer.display_name}
+                      </p>
+                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{review.reply}</p>
+                    </div>
+                  )}
+                  {isOwnProfile && replyingTo === review.id ? (
+                    <div className="mt-3 space-y-2">
+                      <textarea
+                        className="input"
+                        rows="2"
+                        placeholder="Reply to this review..."
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                      />
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          className="btn-primary text-xs !py-1.5"
+                          disabled={replying || !replyText.trim()}
+                          onClick={() => submitReply(review.id)}
+                        >
+                          {replying ? 'Posting...' : 'Post Reply'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-secondary text-xs !py-1.5"
+                          onClick={() => { setReplyingTo(null); setReplyText('') }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : isOwnProfile && !review.reply ? (
+                    <button
+                      type="button"
+                      className="mt-2 text-xs font-semibold text-primary-600 hover:text-primary-700 dark:text-primary-400"
+                      onClick={() => { setReplyingTo(review.id); setReplyText('') }}
+                    >
+                      Reply
+                    </button>
+                  ) : null}
                 </div>
               ))}
             </div>
@@ -302,5 +435,54 @@ export default function FreelancerProfile() {
         </section>
       </div>
     </div>
+
+    <ImageLightbox src={lightbox} alt={lightbox ? freelancer.display_name : ''} onClose={() => setLightbox(null)} />
+
+    {inviteOpen && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Invite to apply"
+        onClick={() => setInviteOpen(false)}
+      >
+        <form
+          onSubmit={handleInvite}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800"
+        >
+          <h2 className="text-lg font-bold text-gray-900 dark:text-white">Invite to Apply</h2>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Send {freelancer.display_name} an invitation to apply to one of your open jobs.
+          </p>
+          {inviteJobs.length === 0 ? (
+            <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+              You don't have any open jobs. You can open one from your job posts first.
+            </p>
+          ) : (
+            <>
+              <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-300">Choose a job</label>
+              <select
+                className="input mt-1"
+                value={inviteJobId}
+                onChange={(e) => setInviteJobId(e.target.value)}
+                required
+              >
+                {inviteJobs.map((job) => (
+                  <option key={job.id} value={job.id}>{job.title}</option>
+                ))}
+              </select>
+              <div className="mt-5 flex justify-end gap-2">
+                <button type="button" className="btn-secondary" onClick={() => setInviteOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-primary" disabled={inviting}>
+                  {inviting ? 'Sending...' : 'Send Invitation'}
+                </button>
+              </div>
+            </>
+          )}
+        </form>
+      </div>
+    )}
+    </>
   )
 }
