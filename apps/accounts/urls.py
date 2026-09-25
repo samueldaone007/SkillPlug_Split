@@ -25,6 +25,9 @@ urlpatterns = [
     
     # Dark mode
     path("toggle-dark-mode/", views.toggle_dark_mode, name="toggle_dark_mode"),
+
+    # Verification
+    path("verification/request/", views.request_verification, name="request_verification"),
     
     # Password reset
     path("password-reset/", views.CustomPasswordResetView.as_view(), name="password_reset"),

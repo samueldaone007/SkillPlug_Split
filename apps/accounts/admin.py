@@ -24,13 +24,15 @@ class UserAdmin(BaseUserAdmin):
         "email",
         "full_name",
         "school_display",
-        "verified",
+        "verification_status",
+        "verification_requested",
         "availability_status",
         "profile_complete",
         "date_joined",
     ]
     list_filter = [
         "verified",
+        "verification_requested",
         "profile_complete",
         "availability_status",
         "school",
@@ -50,6 +52,7 @@ class UserAdmin(BaseUserAdmin):
         "date_joined",
         "updated_at",
         "verification_date",
+        "verification_status",
         "profile_image_preview",
         "verification_doc_preview",
     ]
@@ -86,6 +89,8 @@ class UserAdmin(BaseUserAdmin):
         }),
         ("Verification", {
             "fields": (
+                "verification_status",
+                "verification_requested",
                 "verification_doc_preview",
                 "verification_doc",
                 "verification_date",
@@ -138,14 +143,42 @@ class UserAdmin(BaseUserAdmin):
     def school_display(self, obj):
         return obj.school_display
     school_display.short_description = "School"
-    
-    actions = ["verify_students", "unverify_students", "mark_available", "mark_busy"]
-    
+
+    def verification_status(self, obj):
+        status = obj.verification_status
+        if status == "verified":
+            color = "#16a34a"
+            label = "Verified"
+        elif status == "pending":
+            color = "#ca8a04"
+            label = "Pending Review"
+        else:
+            color = "#6b7280"
+            label = "Not Requested"
+        return format_html('<span style="color: {}; font-weight: 600;">{}</span>', color, label)
+    verification_status.short_description = "Verification"
+
+    actions = ["verify_students", "reject_verification_requests", "unverify_students",
+               "mark_available", "mark_busy"]
+
     @admin.action(description="Verify selected students")
     def verify_students(self, request, queryset):
         from django.utils import timezone
-        updated = queryset.update(verified=True, verification_date=timezone.now())
+        updated = queryset.update(
+            verified=True,
+            verification_requested=False,
+            verification_date=timezone.now(),
+        )
         self.message_user(request, f"{updated} student(s) verified successfully.")
+
+    @admin.action(description="Reject selected verification requests")
+    def reject_verification_requests(self, request, queryset):
+        updated = queryset.update(
+            verification_requested=False,
+            verified=False,
+            verification_date=None,
+        )
+        self.message_user(request, f"{updated} verification request(s) rejected.")
     
     @admin.action(description="Unverify selected students")
     def unverify_students(self, request, queryset):

@@ -90,6 +90,18 @@
                         {% endfor %}
                     </div>
                 </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Student ID (for verification)</label>
+                    {{ form.verification_doc }}
+                    {% if user.verified %}
+                        <p class="text-xs text-gray-400 mt-1">Your student ID has already been verified.</p>
+                    {% elif user.verification_requested %}
+                        <p class="text-xs text-gray-400 mt-1">Your verification request is under review.</p>
+                    {% else %}
+                        <p class="text-xs text-gray-400 mt-1">Upload your student ID, then request verification from your dashboard.</p>
+                    {% endif %}
+                </div>
                 
                 <div class="flex items-center gap-4 pt-4">
                     <button type="submit" class="flex-1 py-3 bg-gradient-to-r from-primary-500 to-primary-600 text-white font-semibold rounded-xl hover:from-primary-600 hover:to-primary-700 shadow-lg transition-all-300">

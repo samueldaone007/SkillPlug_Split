@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
 import Spinner from '../components/Spinner'
 import StarRating from '../components/StarRating'
 import SaveButton from '../components/SaveButton'
+import ReportButton from '../components/ReportButton'
 import { getErrorMessage, getProfileImageUrl, getInitials, formatRelativeTime } from '../utils/format'
 
 export default function FreelancerProfile() {
   const { username } = useParams()
   const { user: currentUser } = useAuth()
   const { showToast } = useToast()
+  const navigate = useNavigate()
   const [freelancer, setFreelancer] = useState(null)
   const [portfolio, setPortfolio] = useState([])
   const [reviews, setReviews] = useState([])
@@ -55,6 +57,15 @@ export default function FreelancerProfile() {
 
   const sum = (arr) => arr.reduce((a, b) => a + b, 0)
   const round = (n) => Math.round(n * 10) / 10
+
+  const startChat = async () => {
+    try {
+      const { data } = await api.post(`/conversations/start/${username}/`)
+      navigate(`/messages/${data.id}`)
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    }
+  }
 
   const handleReviewSubmit = async (e) => {
     e.preventDefault()
@@ -126,6 +137,17 @@ export default function FreelancerProfile() {
             </div>
             <div className="flex items-center gap-2 pb-8 sm:pb-0">
               {!isOwnProfile && <SaveButton freelancer={freelancer} />}
+              {currentUser && !isOwnProfile && (
+                <button type="button" onClick={startChat} className="btn-primary">
+                  <svg className="mr-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                  Message
+                </button>
+              )}
+              {currentUser && !isOwnProfile && (
+                <ReportButton targetType="profile" targetId={freelancer.id} />
+              )}
               {freelancer.whatsapp_link && (
                 <a
                   href={freelancer.whatsapp_link}

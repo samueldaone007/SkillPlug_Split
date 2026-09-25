@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { useToast } from '../components/Toast'
 import Spinner from '../components/Spinner'
 import StarRating from '../components/StarRating'
+import ReportButton from '../components/ReportButton'
 import { getErrorMessage, getProfileImageUrl, getInitials, formatRelativeTime, formatNaira } from '../utils/format'
 
 export default function JobDetail() {
@@ -259,6 +260,13 @@ export default function JobDetail() {
           {user && !user.is_student && job.status === 'open' && !isOwner && (
             <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
               Log in as a student to apply for this job.
+            </div>
+          )}
+
+          {/* Report */}
+          {user && !isOwner && (
+            <div className="mt-6 flex items-center justify-end border-t border-gray-100 pt-4 dark:border-gray-700">
+              <ReportButton targetType="job" targetId={job.id} />
             </div>
           )}
         </div>

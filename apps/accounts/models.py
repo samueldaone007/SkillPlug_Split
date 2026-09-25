@@ -104,6 +104,10 @@ class User(AbstractUser):
     
     # Verification
     verified = models.BooleanField(default=False)
+    verification_requested = models.BooleanField(
+        default=False,
+        help_text="Student has submitted a verification request awaiting admin review",
+    )
     verification_doc = models.ImageField(
         upload_to="verification/",
         blank=True,
@@ -111,6 +115,11 @@ class User(AbstractUser):
         help_text="Upload student ID card for verification",
     )
     verification_date = models.DateTimeField(blank=True, null=True)
+    verification_reject_reason = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Why the student's verification request was rejected (shown to the student)",
+    )
     
     # Profile completion tracking
     profile_complete = models.BooleanField(default=False)
@@ -127,6 +136,17 @@ class User(AbstractUser):
     
     # Dark mode preference
     dark_mode = models.BooleanField(default=False)
+
+    # Notification preferences
+    notification_sound_enabled = models.BooleanField(
+        default=True,
+        help_text="Play a sound when new notifications arrive",
+    )
+    notification_preferences = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Per-type opt-out map, e.g. {'review': False}",
+    )
     
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["username"]
@@ -159,6 +179,14 @@ class User(AbstractUser):
     @property
     def is_student(self):
         return self.account_type in ["student", "both"]
+
+    @property
+    def verification_status(self):
+        if self.verified:
+            return "verified"
+        if self.verification_requested:
+            return "pending"
+        return "none"
     
     @property
     def school_display(self):

@@ -4,12 +4,15 @@ Convert models to/from JSON for the React frontend.
 """
 
 from django.db.models import Avg, Count
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, password_validation
 from rest_framework import serializers
 
 from apps.accounts.models import Skill
+from apps.chat.models import Conversation, Message
 from apps.jobs.models import Job, Application
 from apps.marketplace.models import PortfolioItem
+from apps.moderation.models import Report
+from apps.notifications.models import Notification
 from apps.reviews.models import Review
 
 User = get_user_model()
@@ -30,12 +33,16 @@ class SkillSerializer(serializers.ModelSerializer):
 # =============================================================================
 
 class RegisterSerializer(serializers.ModelSerializer):
-    password = serializers.CharField(write_only=True, min_length=6)
-    password2 = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
+    password2 = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
         fields = ["username", "email", "full_name", "account_type", "password", "password2"]
+
+    def validate_password(self, value):
+        password_validation.validate_password(value)
+        return value
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password2"]:
@@ -117,6 +124,9 @@ class UserProfileSerializer(serializers.ModelSerializer):
     display_name = serializers.CharField(read_only=True)
     whatsapp_link = serializers.CharField(read_only=True)
     school_display = serializers.CharField(read_only=True)
+    verification_status = serializers.CharField(read_only=True)
+    verification_requested = serializers.BooleanField(required=False)
+    is_staff = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = User
@@ -124,13 +134,16 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "id", "username", "email", "full_name", "display_name", "account_type",
             "school", "school_display", "department", "bio", "whatsapp", "whatsapp_link",
             "skills", "skills_detail", "profile_image", "verification_doc",
-            "availability_status", "verified", "verification_date",
+            "availability_status", "verified", "verification_requested",
+            "verification_status", "verification_date", "verification_reject_reason",
             "profile_complete", "date_joined", "updated_at",
-            "saved_freelancers", "dark_mode", "is_student",
+            "saved_freelancers", "dark_mode", "is_student", "is_staff",
+            "notification_sound_enabled", "notification_preferences",
         ]
-        read_only_fields = ["username", "email", "verified", "verification_date",
-                            "profile_complete", "date_joined", "updated_at",
-                            "saved_freelancers", "is_student"]
+        read_only_fields = ["username", "email", "verified", "verification_status",
+                            "verification_date", "verification_reject_reason",
+                            "profile_complete", "date_joined",
+                            "updated_at", "saved_freelancers", "is_student", "is_staff"]
 
     def validate_skills(self, value):
         for skill in value:
@@ -139,6 +152,22 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return value
 
     def update(self, instance, validated_data):
+        new_doc = validated_data.get("verification_doc")
+        doc_uploaded = new_doc is not None and (
+            not instance.verification_doc or new_doc != instance.verification_doc
+        )
+        explicitly_requested = validated_data.get("verification_requested", False)
+
+        if doc_uploaded:
+            # Uploading/replacing the ID always (re)enters the review queue.
+            validated_data["verified"] = False
+            validated_data["verification_date"] = None
+            validated_data["verification_requested"] = True
+            validated_data["verification_reject_reason"] = None
+        elif explicitly_requested and not instance.verified:
+            validated_data["verification_requested"] = True
+            validated_data["verification_reject_reason"] = None
+
         instance = super().update(instance, validated_data)
         required_fields = ["school", "department", "bio", "whatsapp"]
         if instance.account_type in ["student", "both"]:
@@ -149,6 +178,30 @@ class UserProfileSerializer(serializers.ModelSerializer):
             instance.profile_complete = bool(instance.full_name or instance.bio)
         instance.save(update_fields=["profile_complete"])
         return instance
+
+
+class AdminVerificationSerializer(serializers.ModelSerializer):
+    """Pending verification requests for the admin queue."""
+    display_name = serializers.CharField(read_only=True)
+    school_display = serializers.CharField(read_only=True)
+    verification_status = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = User
+        fields = [
+            "id", "username", "email", "full_name", "display_name",
+            "school", "school_display", "department", "profile_image",
+            "verification_doc", "verified", "verification_requested",
+            "verification_status", "verification_date", "profile_complete",
+            "date_joined", "updated_at",
+        ]
+
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ["id", "message", "notification_type", "link", "is_read", "created_at"]
+        read_only_fields = fields
 
 
 class DashboardSerializer(serializers.Serializer):
@@ -409,3 +462,139 @@ class HomeSerializer(serializers.Serializer):
     total_skills = serializers.IntegerField()
     skills = SkillSerializer(many=True)
     universities = serializers.ListField(child=serializers.ListField())
+
+
+# =============================================================================
+# CHAT
+# =============================================================================
+
+class MessageSerializer(serializers.ModelSerializer):
+    sender_name = serializers.CharField(source="sender.display_name", read_only=True)
+
+    class Meta:
+        model = Message
+        fields = [
+            "id", "conversation", "sender", "sender_name",
+            "body", "is_read", "created_at",
+        ]
+        read_only_fields = ["sender", "is_read", "created_at"]
+
+
+class ConversationSerializer(serializers.ModelSerializer):
+    other = serializers.SerializerMethodField()
+    last_message = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Conversation
+        fields = [
+            "id", "other", "last_message", "unread_count",
+            "updated_at", "created_at",
+        ]
+
+    def get_other(self, obj):
+        request = self.context.get("request")
+        return UserPublicSerializer(
+            obj.other(request.user), context=self.context
+        ).data
+
+    def get_last_message(self, obj):
+        message = obj.messages.last()
+        if not message:
+            return None
+        return {
+            "body": message.body[:120],
+            "sender": message.sender_id,
+            "created_at": message.created_at,
+        }
+
+    def get_unread_count(self, obj):
+        request = self.context.get("request")
+        return obj.messages.filter(is_read=False).exclude(
+            sender=request.user
+        ).count()
+
+
+# =============================================================================
+# MODERATION
+# =============================================================================
+
+class ReportCreateSerializer(serializers.Serializer):
+    target_type = serializers.ChoiceField(
+        choices=["profile", "job"]
+    )
+    target_id = serializers.IntegerField()
+    reason = serializers.CharField(max_length=2000)
+
+    def validate_reason(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Please describe the problem.")
+        return value.strip()
+
+    def validate(self, attrs):
+        request = self.context.get("request")
+        target_type = attrs["target_type"]
+        try:
+            if target_type == "job":
+                Job.objects.get(pk=attrs["target_id"])
+            else:
+                user = User.objects.get(pk=attrs["target_id"])
+                if request and user == request.user:
+                    raise serializers.ValidationError(
+                        {"target_id": "You cannot report yourself."}
+                    )
+        except (Job.DoesNotExist, User.DoesNotExist):
+            raise serializers.ValidationError(
+                {"target_id": "Target not found."}
+            )
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context.get("request")
+        target_type = validated_data["target_type"]
+        report = Report.objects.create(
+            reporter=request.user,
+            target_type=target_type,
+            reason=validated_data["reason"],
+            target_user=(
+                User.objects.get(pk=validated_data["target_id"])
+                if target_type == "profile"
+                else None
+            ),
+            target_job=(
+                Job.objects.get(pk=validated_data["target_id"])
+                if target_type == "job"
+                else None
+            ),
+        )
+        return report
+
+
+class ReportSerializer(serializers.ModelSerializer):
+    reporter_name = serializers.CharField(source="reporter.display_name", read_only=True)
+    target = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Report
+        fields = [
+            "id", "target_type", "target", "reason", "status",
+            "reporter_name", "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_target(self, obj):
+        target = obj.target()
+        if not target:
+            return None
+        if obj.target_type == "job":
+            return {
+                "id": target.id,
+                "title": target.title,
+                "url": f"/jobs/{target.id}",
+            }
+        return {
+            "id": target.id,
+            "username": target.username,
+            "display_name": target.display_name,
+            "url": f"/u/{target.username}",
+        }

@@ -76,6 +76,9 @@ INSTALLED_APPS = [
     "apps.marketplace",
     "apps.jobs",
     "apps.reviews",
+    "apps.notifications",
+    "apps.chat",
+    "apps.moderation",
 ]
  
 MIDDLEWARE = [
@@ -156,28 +159,12 @@ ACCOUNT_LOGOUT_ON_GET = True
 ACCOUNT_LOGOUT_REDIRECT_URL = "/"
 ACCOUNT_SESSION_REMEMBER = True
 ACCOUNT_UNIQUE_EMAIL = True
- 
+  
 LOGIN_REDIRECT_URL = "dashboard"
 LOGOUT_REDIRECT_URL = "/"
 LOGIN_URL = "account_login"
- 
-# Password validation
-AUTH_PASSWORD_VALIDATORS = [
-    {
-        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
-    },
-    {
-        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
-    },
-]
- 
- 
+  
+  
 # =============================================================================
 # INTERNATIONALIZATION
 # =============================================================================
@@ -304,6 +291,8 @@ REST_FRAMEWORK = {
         "password_reset": "5/hour",
         "review": "20/hour",
         "apply": "20/hour",
+        "message": "100/hour",
+        "report": "10/hour",
     },
 }
 
@@ -319,6 +308,46 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": False,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+
+
+# =============================================================================
+# AUTH - PASSWORD VALIDATION
+# =============================================================================
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 8},
+    },
+    {
+        "NAME": "apps.accounts.validators.StrengthValidator",
+    },
+]
+
+
+# =============================================================================
+# CACHING
+# =============================================================================
+
+REDIS_URL = config("REDIS_URL", default="")
+
+if REDIS_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": REDIS_URL,
+        }
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "skillplug-dev-cache",
+        }
+    }
 
 
 # =============================================================================

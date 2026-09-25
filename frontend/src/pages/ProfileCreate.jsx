@@ -256,7 +256,7 @@ export default function ProfileCreate() {
                   className="input"
                   onChange={handleChange}
                 />
-                <p className="mt-1 text-xs text-gray-400">Upload your student ID to get verified.</p>
+                <p className="mt-1 text-xs text-gray-400">Upload your student ID — it will be submitted for admin verification.</p>
               </div>
             </>
           )}

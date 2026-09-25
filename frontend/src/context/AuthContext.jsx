@@ -80,6 +80,7 @@ export function AuthProvider({ children }) {
   }
 
   const isAuthenticated = Boolean(user)
+  const isAdmin = Boolean(user?.is_staff)
 
   return (
     <AuthContext.Provider
@@ -93,6 +94,7 @@ export function AuthProvider({ children }) {
         darkMode,
         toggleDarkMode,
         isAuthenticated,
+        isAdmin,
         fetchUser,
       }}
     >

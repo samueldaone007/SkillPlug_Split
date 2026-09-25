@@ -264,12 +264,20 @@ class ProfileUpdateForm(forms.ModelForm):
             "class": "w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-all",
         }),
     )
+    verification_doc = forms.ImageField(
+        required=False,
+        widget=forms.FileInput(attrs={
+            "class": "w-full px-4 py-3 rounded-lg border border-gray-300 focus:border-green-500 focus:ring-2 focus:ring-green-200 transition-all",
+            "accept": "image/*",
+        }),
+    )
     
     class Meta:
         model = User
         fields = [
             "full_name", "bio", "school", "department",
             "whatsapp", "skills", "profile_image", "availability_status",
+            "verification_doc",
         ]
     
     def clean_whatsapp(self):

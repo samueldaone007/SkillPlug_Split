@@ -23,11 +23,25 @@ import PortfolioManage from './pages/PortfolioManage'
 import PortfolioForm from './pages/PortfolioForm'
 import ResetPassword from './pages/ResetPassword'
 import ResetPasswordConfirm from './pages/ResetPasswordConfirm'
+import AdminVerifications from './pages/AdminVerifications'
+import AdminOverview from './pages/AdminOverview'
+import AdminReports from './pages/AdminReports'
+import Messages from './pages/Messages'
+import Conversation from './pages/Conversation'
+import Settings from './pages/Settings'
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, loading } = useAuth()
   if (loading) return <div className="flex min-h-screen items-center justify-center"><Spinner /></div>
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  return children
+}
+
+function AdminRoute({ children }) {
+  const { isAuthenticated, isAdmin, loading } = useAuth()
+  if (loading) return <div className="flex min-h-screen items-center justify-center"><Spinner /></div>
+  if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (!isAdmin) return <Navigate to="/dashboard" replace />
   return children
 }
 
@@ -74,6 +88,12 @@ function App() {
           <Route path="/portfolio" element={<ProtectedRoute><PortfolioManage /></ProtectedRoute>} />
           <Route path="/portfolio/add" element={<ProtectedRoute><PortfolioForm /></ProtectedRoute>} />
           <Route path="/portfolio/:id/edit" element={<ProtectedRoute><PortfolioForm edit /></ProtectedRoute>} />
+          <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+          <Route path="/messages/:id" element={<ProtectedRoute><Conversation /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          <Route path="/admin/verifications" element={<AdminRoute><AdminVerifications /></AdminRoute>} />
+          <Route path="/admin/overview" element={<AdminRoute><AdminOverview /></AdminRoute>} />
+          <Route path="/admin/reports" element={<AdminRoute><AdminReports /></AdminRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

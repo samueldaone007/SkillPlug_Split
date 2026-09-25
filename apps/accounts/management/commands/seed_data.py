@@ -133,6 +133,7 @@ class Command(BaseCommand):
                 "account_type": "student",
                 "availability_status": "available",
                 "verified": False,
+                "verification_requested": True,
                 "profile_complete": True,
                 "skills": ["Video Editing", "Photography", "Social Media Management"],
             },

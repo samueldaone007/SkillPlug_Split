@@ -32,6 +32,31 @@ urlpatterns = [
     path("users/<str:username>/save/", views.ToggleSaveFreelancerView.as_view(), name="api_toggle_save"),
     path("users/<str:username>/portfolio/", views.UserPortfolioView.as_view(), name="api_user_portfolio"),
 
+    # Admin - student verification
+    path("admin/verifications/", views.VerificationQueueView.as_view(), name="api_admin_verifications"),
+    path(
+        "admin/verifications/<int:pk>/",
+        views.VerificationDecisionView.as_view(),
+        name="api_admin_verification_decision",
+    ),
+    path("admin/stats/", views.AdminStatsView.as_view(), name="api_admin_stats"),
+
+    # Notifications
+    path("notifications/", views.NotificationListView.as_view(), name="api_notifications"),
+    path("notifications/unread-count/", views.UnreadNotificationCountView.as_view(), name="api_notifications_unread_count"),
+    path("notifications/read-all/", views.MarkAllNotificationsReadView.as_view(), name="api_notifications_read_all"),
+    path("notifications/<int:pk>/read/", views.MarkNotificationReadView.as_view(), name="api_notification_read"),
+
+    # Chat
+    path("conversations/", views.ConversationListView.as_view(), name="api_conversations"),
+    path("conversations/start/<str:username>/", views.StartConversationView.as_view(), name="api_conversation_start"),
+    path("conversations/<int:pk>/", views.ConversationDetailView.as_view(), name="api_conversation_detail"),
+
+    # Moderation
+    path("reports/", views.CreateReportView.as_view(), name="api_report_create"),
+    path("admin/reports/", views.ReportListView.as_view(), name="api_admin_reports"),
+    path("admin/reports/<int:pk>/action/", views.ReportActionView.as_view(), name="api_admin_report_action"),
+
     # Dashboard
     path("dashboard/", views.DashboardView.as_view(), name="api_dashboard"),
 

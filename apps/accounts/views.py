@@ -96,6 +96,16 @@ class ProfileCreateView(UpdateView):
         return super().dispatch(request, *args, **kwargs)
     
     def form_valid(self, form):
+        if "verification_doc" in self.request.FILES:
+            user = self.request.user
+            user.verification_requested = True
+            user.verified = False
+            user.verification_date = None
+            user.verification_reject_reason = None
+            user.save(update_fields=[
+                "verification_requested", "verified",
+                "verification_date", "verification_reject_reason",
+            ])
         messages.success(
             self.request,
             "Profile created successfully! Welcome to SkillPlug."
@@ -120,6 +130,16 @@ class ProfileUpdateView(UpdateView):
         return self.request.user
     
     def form_valid(self, form):
+        if "verification_doc" in self.request.FILES:
+            user = self.request.user
+            user.verification_requested = True
+            user.verified = False
+            user.verification_date = None
+            user.verification_reject_reason = None
+            user.save(update_fields=[
+                "verification_requested", "verified",
+                "verification_date", "verification_reject_reason",
+            ])
         messages.success(self.request, "Profile updated successfully!")
         return super().form_valid(form)
     
@@ -263,6 +283,32 @@ def toggle_dark_mode(request):
     
     response = redirect(request.META.get("HTTP_REFERER", "home"))
     return response
+
+
+@login_required
+def request_verification(request):
+    """Queue the logged-in student's ID for admin verification."""
+    user = request.user
+    if not user.is_student:
+        messages.error(request, "Only students can request verification.")
+        return redirect("dashboard")
+
+    if user.verified:
+        messages.info(request, "You are already verified.")
+        return redirect("dashboard")
+
+    if not user.verification_doc:
+        messages.error(request, "Upload your student ID first, then request verification.")
+        return redirect("profile_edit")
+
+    user.verification_requested = True
+    user.verification_reject_reason = None
+    user.save(update_fields=["verification_requested", "verification_reject_reason"])
+    messages.success(
+        request,
+        "Verification request submitted! An admin will review your student ID shortly.",
+    )
+    return redirect("dashboard")
  
  
 # Password Reset Views

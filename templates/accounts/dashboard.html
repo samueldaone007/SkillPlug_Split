@@ -255,18 +255,38 @@
                         {% endif %}
                     </div>
                     <div class="flex items-center justify-between">
-                        <span class="text-sm text-gray-600 dark:text-gray-400">Verified</span>
+                        <span class="text-sm text-gray-600 dark:text-gray-400">Verification</span>
                         {% if user.verified %}
                             <span class="text-green-600 text-sm font-medium flex items-center">
                                 <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
                                 </svg>
-                                Yes
+                                Verified
                             </span>
+                        {% elif user.verification_requested %}
+                            <span class="text-yellow-600 text-sm font-medium">Pending Review</span>
                         {% else %}
-                            <span class="text-gray-400 text-sm font-medium">Pending</span>
+                            <span class="text-gray-400 text-sm font-medium">Not Requested</span>
                         {% endif %}
                     </div>
+                    {% if not user.verified %}
+                        <div class="pt-2">
+                            {% if user.verification_requested %}
+                                <p class="text-xs text-gray-400">Your student ID is being reviewed by an admin.</p>
+                            {% elif user.verification_doc %}
+                                <form method="post" action="{% url 'request_verification' %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="w-full py-2 px-4 bg-primary-600 text-white text-sm font-medium rounded-xl hover:bg-primary-700 transition-colors">
+                                        Request Verification
+                                    </button>
+                                </form>
+                            {% else %}
+                                <a href="{% url 'profile_edit' %}" class="block w-full py-2 px-4 text-sm font-medium text-center rounded-xl border border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100 transition-colors">
+                                    Upload Student ID to Get Verified
+                                </a>
+                            {% endif %}
+                        </div>
+                    {% endif %}
                     <div class="flex items-center justify-between">
                         <span class="text-sm text-gray-600 dark:text-gray-400">Availability</span>
                         <span class="text-sm font-medium {% if user.availability_status == 'available' %}text-green-600{% elif user.availability_status == 'busy' %}text-yellow-600{% else %}text-gray-400{% endif %}">

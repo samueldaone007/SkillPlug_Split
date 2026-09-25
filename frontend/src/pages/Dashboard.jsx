@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api/client'
 import { useAuth } from '../context/AuthContext'
+import { useToast } from '../components/Toast'
 import Spinner from '../components/Spinner'
-import { getProfileImageUrl, getInitials } from '../utils/format'
+import { getProfileImageUrl, getInitials, getErrorMessage } from '../utils/format'
 
 const AVAILABILITY_LABELS = {
   available: 'Available for Work',
@@ -25,9 +26,11 @@ const jobStatusColors = {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth()
+  const { user, updateUser } = useAuth()
+  const { showToast } = useToast()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [requesting, setRequesting] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -47,6 +50,23 @@ export default function Dashboard() {
 
   if (loading) return <Spinner />
   if (!data) return <div className="py-16 text-center text-gray-500">Could not load dashboard.</div>
+
+  const requestVerification = async () => {
+    if (!user?.verification_doc) {
+      showToast('Upload your student ID first, then request verification.', 'warning')
+      return
+    }
+    setRequesting(true)
+    try {
+      const { data: updated } = await api.patch('/auth/profile/', { verification_requested: true })
+      updateUser(updated)
+      showToast('Verification submitted! An admin will review your student ID shortly.', 'success')
+    } catch (err) {
+      showToast(getErrorMessage(err), 'error')
+    } finally {
+      setRequesting(false)
+    }
+  }
 
   const stats = [
     {
@@ -359,18 +379,55 @@ export default function Dashboard() {
                   )}
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Verified</span>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Verification</span>
                   {user?.verified ? (
                     <span className="flex items-center text-sm font-medium text-green-600">
                       <svg className="mr-1 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                       </svg>
-                      Yes
+                      Verified
                     </span>
+                  ) : user?.verification_requested ? (
+                    <span className="text-sm font-medium text-yellow-600">Pending Review</span>
                   ) : (
-                    <span className="text-sm font-medium text-gray-400">Pending</span>
+                    <span className="text-sm font-medium text-gray-400">Not Requested</span>
                   )}
                 </div>
+                {!user?.verified && (
+                  <div className="pt-1">
+                    {user?.verification_requested ? (
+                      <p className="text-xs text-gray-400">
+                        Your student ID is being reviewed by an admin.
+                      </p>
+                    ) : user?.verification_doc ? (
+                      <button
+                        type="button"
+                        onClick={requestVerification}
+                        disabled={requesting}
+                        className="w-full rounded-xl bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700 disabled:opacity-60"
+                      >
+                        {requesting ? 'Submitting...' : 'Request Verification'}
+                      </button>
+                    ) : (
+                      <Link
+                        to="/profile/edit"
+                        className="block w-full rounded-xl border border-primary-300 bg-primary-50 px-4 py-2 text-center text-sm font-medium text-primary-700 transition-colors hover:bg-primary-100 dark:border-primary-700 dark:bg-primary-900/30 dark:text-primary-300"
+                      >
+                        Upload Student ID to Get Verified
+                      </Link>
+                    )}
+                    {user?.verification_reject_reason && (
+                      <div className="mt-2 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
+                        <p className="text-xs font-semibold text-red-700 dark:text-red-300">
+                          Verification was rejected
+                        </p>
+                        <p className="mt-1 text-xs leading-relaxed text-red-600 dark:text-red-400">
+                          {user.verification_reject_reason}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-gray-600 dark:text-gray-400">Availability</span>
                   <span

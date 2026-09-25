@@ -13,7 +13,11 @@ A production-ready MVP that connects Nigerian university students with clients w
 - **WhatsApp Integration** - One-click contact via WhatsApp click-to-chat
 - **Reviews & Ratings** - 5-star rating system with comments
 - **Saved Freelancers** - Bookmark favorite students
+- **In-App Notifications** - Real-time bell with unread badge and a browser chime sound; notified on verification outcomes, job applications, application status changes, new reviews/saves, chat messages, and moderation decisions. Notifications are paginated with a "Load more" button, and you can mute the sound or opt out per notification type in **Settings**
+- **In-App Messaging** - Direct chats between clients and freelancers (`/messages`), with read receipts, unread badges, and new-message notifications
+- **Reports & Moderation** - Report suspicious profiles or jobs; admins review them in the reports queue and can deactivate the offending job/user
 - **Dark Mode** - Toggle between light and dark themes
+- **Password Strength** - Registration enforces 8+ characters with uppercase, lowercase, and a number
 - **HTMX Live Search** - Real-time freelancer search on the server-rendered frontend
 - **Responsive Design** - Mobile-first with bottom navigation on both frontends
 
@@ -23,7 +27,10 @@ A production-ready MVP that connects Nigerian university students with clients w
 
 ### Admin Features
 - Full Django Admin integration
-- Bulk verify/unverify students (`verify_students` / `unverify_students` actions)
+- In-app verification queue (`/admin/verifications` in the React app) — admins review submitted student IDs and approve/reject from the frontend; rejecting requires a reason that's shown to the student
+- Admin overview (`/admin/overview`) — aggregate platform stats (users, verification load, jobs by status, reviews, ratings)
+- Reports queue (`/admin/reports`) — admins review user reports, resolve (deactivates the offending profile/job) or dismiss, and reporters get an outcome notification
+- Bulk verify/unverify students (`verify_students` / `unverify_students` actions in Django admin)
 - Moderate job posts and applications
 - Manage users, skills, and reviews
 
@@ -55,7 +62,10 @@ skillplug/
 │   ├── api/               # Django REST Framework API (React frontend backend)
 │   ├── marketplace/       # Freelancer browsing, portfolio, home
 │   ├── jobs/              # Job postings and applications
-│   └── reviews/           # Ratings and reviews
+│   ├── reviews/           # Ratings and reviews
+│   ├── notifications/     # In-app notifications (bell + chime, paginated)
+│   ├── chat/              # Direct messaging between users
+│   └── moderation/        # User reports and admin review queue
 ├── frontend/              # React (Vite) single-page app
 │   └── src/
 │       ├── api/           # Axios client (VITE_API_URL or /api/v1)
@@ -176,6 +186,7 @@ python manage.py test apps.api   # or: pytest
 | `EMAIL_HOST_PASSWORD` | SMTP password | (optional) |
 | `DEFAULT_FROM_EMAIL` | From address for outgoing email | `noreply@skillplug.ng` |
 | `WHATSAPP_DEFAULT_MESSAGE` | Default WhatsApp click-to-chat message | (see `.env.example`) |
+| `REDIS_URL` | Redis URL for response caching (e.g. `redis://localhost:6379/0`). Falls back to in-memory cache when empty | *(empty)* |
 
 Frontend (`frontend/.env`):
 
@@ -185,9 +196,30 @@ Frontend (`frontend/.env`):
 
 ## Student Verification
 
-1. Students upload a student ID doc via profile creation/edit (`verification_doc` field). The `verified` flag itself is **admin-only**.
-2. Admins approve via `admin/` - edit the user and tick **Verified**, or use the bulk **Verify students** / **Unverify students** actions.
-3. Once verified, the freelancer lists the "verified" badge and qualifies for the verified/featured sections.
+1. Students upload a student ID (`verification_doc`) via profile creation/edit — uploading one automatically queues a verification request (`verification_requested=True`).
+2. If the ID is already on file, students submit the request from their dashboard (**Request Verification**), or via the server-rendered dashboard's **Request Verification** button.
+3. Admins approve/reject from the React app at **Verifications** (`/admin/verifications`) — the pending queue shows each student's ID document with Verify/Reject buttons:
+   - **Verify** sets `verified=True`, clears the request, and stamps `verification_date`.
+   - **Reject** asks for a reason, clears the request without verifying, and shows the reason to the student (dashboard + profile edit).
+   - Outcomes are delivered as in-app notifications with a bell badge and a chime sound.
+4. Alternatively, admins can use Django `admin/`:
+   - **Verify selected students** bulk action approves them (sets `verified=True`, clears the request).
+   - **Reject selected verification requests** clears pending requests.
+   - The **Verification** list filter and status column (`Pending Review` / `Verified`) make the queue easy to review.
+   - Per-user `verified` checkbox still works for direct edits.
+5. Once verified, the student gets the badge and appears in the featured/verified sections. Re-uploading an ID resets `verified=False` so it must be re-approved.
+
+## In-App Notifications
+
+The bell icon in the React app (top-right on desktop, inline on mobile) polls the API every 30 seconds while you're signed in:
+
+- **Unread badge** shows the number of unread notifications and updates automatically.
+- **Chime sound** (Web Audio, no audio files needed) plays when new notifications arrive — browsers only play it after your first interaction with the page.
+- Clicking a notification marks it read and jumps to its link (profile, job, etc.). Use **Mark all read** to clear the badge.
+- Admins are notified when a student submits a verification request; students get notified on verification results, application status changes, new reviews, and when someone saves their profile.
+- Chat partners and reporters also get notifications (`message` and moderation types).
+- The list is paginated (12 per page) — open the bell and hit **Load more** to fetch older notifications.
+- **Settings** (`/settings`) lets you mute the chime sound entirely and toggle each notification type on/off.
 
 ## API Endpoints (`/api/v1/`)
 
@@ -204,6 +236,20 @@ Frontend (`frontend/.env`):
 | GET | `/users/<username>/` | Public profile | No |
 | POST | `/users/<username>/save/` | Toggle save | Yes |
 | GET | `/users/<username>/portfolio/` | User portfolio | No |
+| GET | `/admin/verifications/` | Pending verification queue | Staff |
+| POST | `/admin/verifications/<id>/` | Verify / reject request (with reason) | Staff |
+| GET | `/admin/stats/` | Platform overview stats | Staff |
+| GET | `/notifications/` | Own notifications (paginated) | Yes |
+| GET | `/notifications/unread-count/` | Unread count | Yes |
+| POST | `/notifications/read-all/` | Mark all read | Yes |
+| POST | `/notifications/<id>/read/` | Mark one read | Yes |
+| GET | `/conversations/` | Your conversations | Yes |
+| POST | `/conversations/start/<username>/` | Open/create a chat | Yes |
+| GET | `/conversations/<id>/` | Messages (marks read) | Participant |
+| POST | `/conversations/<id>/` | Send a message | Participant |
+| POST | `/reports/` | Report a profile/job | Yes |
+| GET | `/admin/reports/` | Reports queue (`?status=pending`) | Staff |
+| POST | `/admin/reports/<id>/action/` | Resolve / dismiss a report | Staff |
 | GET | `/dashboard/` | Dashboard data | Yes |
 | POST | `/toggle-dark-mode/` | Toggle dark mode | Yes |
 | GET | `/skills/` | List skills | No |
