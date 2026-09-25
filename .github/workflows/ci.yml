@@ -13,6 +13,7 @@ jobs:
       DEBUG: "True"
       SECRET_KEY: ci-secret-key-do-not-use-in-production
       ALLOWED_HOSTS: localhost,127.0.0.1
+      DJANGO_SETTINGS_MODULE: skillplug.settings
       DB_NAME: skillplug
       DB_USER: postgres
       DB_PASSWORD: postgres
