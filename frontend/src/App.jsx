@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
@@ -11,7 +11,6 @@ import Home from './pages/Home'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
-import ProfileCreate from './pages/ProfileCreate'
 import ProfileEdit from './pages/ProfileEdit'
 import FreelancerProfile from './pages/FreelancerProfile'
 import Freelancers from './pages/Freelancers'
@@ -33,12 +32,17 @@ import Conversation from './pages/Conversation'
 import NotificationsPage from './pages/NotificationsPage'
 import Settings from './pages/Settings'
 import Reports from './pages/Reports'
+import Onboarding from './pages/Onboarding'
 import NotFound from './pages/NotFound'
 
-function ProtectedRoute({ children }) {
-  const { isAuthenticated, loading } = useAuth()
+function ProtectedRoute({ children, allowIncomplete = false }) {
+  const { isAuthenticated, user, loading } = useAuth()
+  const location = useLocation()
   if (loading) return <div className="flex min-h-screen items-center justify-center"><Spinner /></div>
   if (!isAuthenticated) return <Navigate to="/login" replace />
+  if (!allowIncomplete && !user?.profile_complete && location.pathname !== '/onboarding') {
+    return <Navigate to="/onboarding" replace />
+  }
   return children
 }
 
@@ -80,7 +84,7 @@ function App() {
             <Route path="/reset-password" element={<PublicOnlyRoute><ResetPassword /></PublicOnlyRoute>} />
             <Route path="/reset-password/confirm/:uid/:token" element={<PublicOnlyRoute><ResetPasswordConfirm /></PublicOnlyRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/profile/create" element={<ProtectedRoute><ProfileCreate /></ProtectedRoute>} />
+            <Route path="/onboarding" element={<ProtectedRoute allowIncomplete><Onboarding /></ProtectedRoute>} />
             <Route path="/profile/edit" element={<ProtectedRoute><ProfileEdit /></ProtectedRoute>} />
             <Route path="/u/:username" element={<FreelancerProfile />} />
             <Route path="/freelancers" element={<Freelancers />} />

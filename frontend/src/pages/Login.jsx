@@ -5,7 +5,7 @@ import { useToast } from '../components/Toast'
 import { getErrorMessage } from '../utils/format'
 
 export default function Login() {
-  const { login } = useAuth()
+  const { login, user } = useAuth()
   const { showToast } = useToast()
   const navigate = useNavigate()
   const [form, setForm] = useState({ email: '', password: '' })
@@ -23,7 +23,7 @@ export default function Login() {
     try {
       await login(form.email, form.password)
       showToast('Welcome back!', 'success')
-      navigate('/dashboard')
+      navigate(user?.profile_complete ? '/dashboard' : '/onboarding')
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {

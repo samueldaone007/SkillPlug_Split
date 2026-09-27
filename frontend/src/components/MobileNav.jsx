@@ -4,8 +4,8 @@ import { useAuth } from '../context/AuthContext'
 export default function MobileNav() {
   const { isAuthenticated } = useAuth()
 
-  const base = 'flex flex-col items-center gap-1 px-2 py-1 text-[10px] font-medium'
-  const active = 'text-primary-600 dark:text-primary-400'
+  const base = 'flex flex-col items-center gap-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wide'
+  const active = 'text-ink dark:text-white'
   const inactive = 'text-gray-500 dark:text-gray-400'
 
   const Icon = ({ d }) => (
@@ -15,7 +15,7 @@ export default function MobileNav() {
   )
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 bg-white/95 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t-2 border-[color:var(--card-border)] bg-[var(--bg)] md:hidden">
       <div className="mx-auto grid max-w-md grid-cols-4">
         <NavLink to="/" end className={({ isActive }) => `${base} ${isActive ? active : inactive}`}>
           <Icon d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10" />

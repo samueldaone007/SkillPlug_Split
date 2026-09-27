@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useNavigate, NavLink } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import NotificationBell from './NotificationBell'
+import ThemeSwitcher from './ThemeSwitcher'
 import { useUnreadMessages } from '../hooks/useUnreadMessages'
 import { getProfileImageUrl, getInitials } from '../utils/format'
 
@@ -13,23 +14,21 @@ export default function Navbar() {
   const navigate = useNavigate()
 
   const navLinkClass = ({ isActive }) =>
-    `rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+    `nav-ghost rounded-lg px-4 py-2 text-sm font-bold transition-all ${
       isActive
-        ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200'
-        : 'text-gray-600 hover:bg-gray-50 hover:text-primary-600 dark:text-gray-300 dark:hover:bg-gray-800'
+        ? 'nav-pill text-ink'
+        : 'border-2 border-transparent text-ink/60 dark:text-gray-300'
     }`
 
   return (
-    <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
+    <header className="theme-header sticky top-0 z-50">
       <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-6">
             <Link to="/" className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 text-lg font-black text-white">
-                SP
-              </span>
-              <span className="hidden text-lg font-bold text-gray-900 dark:text-white sm:block">
-                Skill<span className="text-primary-600">Plug</span>
+              <span className="brand-tile text-lg">SP</span>
+              <span className="brand-word hidden text-lg text-ink sm:block">
+                Skill<mark>Plug</mark>
               </span>
             </Link>
 
@@ -66,6 +65,7 @@ export default function Navbar() {
               </Link>
             )}
             {isAuthenticated && <NotificationBell />}
+            <ThemeSwitcher />
             <button
               type="button"
               onClick={toggleDarkMode}
@@ -105,7 +105,7 @@ export default function Navbar() {
                     )}
                   </button>
                   {userOpen && (
-                    <div className="absolute right-0 mt-2 w-48 rounded-xl border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                    <div className="card absolute right-0 z-50 mt-2 w-48 py-1">
                       <div className="border-b border-gray-100 px-4 py-2 dark:border-gray-700">
                         <p className="text-sm font-semibold text-gray-900 dark:text-white">{user.display_name}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">{user.email}</p>
@@ -189,6 +189,7 @@ export default function Navbar() {
               </Link>
             )}
             {isAuthenticated && <NotificationBell />}
+            <ThemeSwitcher />
             <button
               type="button"
               onClick={() => setMobileOpen(!mobileOpen)}
@@ -210,7 +211,7 @@ export default function Navbar() {
       </nav>
 
       {mobileOpen && (
-        <div className="border-t border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-900 md:hidden">
+        <div className="border-t-2 border-transparent bg-transparent px-4 py-3 md:hidden">
           <div className="flex flex-col gap-1">
             <NavLink to="/freelancers" className={navLinkClass} onClick={() => setMobileOpen(false)}>Freelancers</NavLink>
             <NavLink to="/jobs" className={navLinkClass} onClick={() => setMobileOpen(false)}>Jobs</NavLink>
