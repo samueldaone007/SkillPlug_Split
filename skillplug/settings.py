@@ -8,6 +8,7 @@ from decouple import config
 from datetime import timedelta
 from django.core.exceptions import ImproperlyConfigured
 import os
+import dj_database_url
  
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -128,20 +129,23 @@ ASGI_APPLICATION = "skillplug.asgi.application"
 # DATABASE
 # =============================================================================
 
+# DATABASE_URL is preferred (Render sets it automatically for a managed
+# Postgres). Falls back to the individual DB_* vars so local dev keeps working.
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": config("DB_NAME", default="skillplug"),
-        "USER": config("DB_USER", default="postgres"),
-        "PASSWORD": config("DB_PASSWORD", default="postgres"),
-        "HOST": config("DB_HOST", default="localhost"),
-        "PORT": config("DB_PORT", default="5432", cast=int),
-        "CONN_MAX_AGE": config("DB_CONN_MAX_AGE", default=60, cast=int),
-        "OPTIONS": {
-            "connect_timeout": 10,
-        },
-    }
+    "default": dj_database_url.config(
+        default=(
+            "postgres://{user}:{password}@{host}:{port}/{name}".format(
+                user=config("DB_USER", default="postgres"),
+                password=config("DB_PASSWORD", default="postgres"),
+                host=config("DB_HOST", default="localhost"),
+                port=config("DB_PORT", default="5432"),
+                name=config("DB_NAME", default="skillplug"),
+            )
+        ),
+        conn_max_age=config("DB_CONN_MAX_AGE", default=60, cast=int),
+    )
 }
+DATABASES["default"]["OPTIONS"] = {"connect_timeout": 10}
  
  
 # =============================================================================
