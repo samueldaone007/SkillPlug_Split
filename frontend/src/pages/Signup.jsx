@@ -32,9 +32,9 @@ export default function Signup({ edit: _edit }) {
     }
     setLoading(true)
     try {
-      await register(form)
+      const newUser = await register(form)
       showToast('Welcome to SkillPlug! Please complete your profile.', 'success')
-      navigate('/profile/create')
+      navigate(newUser?.profile_complete ? '/dashboard' : '/onboarding')
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {

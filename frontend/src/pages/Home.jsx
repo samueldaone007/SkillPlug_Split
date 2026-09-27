@@ -11,7 +11,7 @@ export default function Home() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const { isAuthenticated } = useAuth()
-  usePageMeta(null, 'SkillPlug connects you with verified Nigerian student freelancers for design, development, writing and more.')
+  usePageMeta(null, 'SkillPlug connects you with verified Nigerian student freelancers for creative work, tutoring, business support, tech, and more.')
 
   useEffect(() => {
     let cancelled = false
@@ -50,8 +50,8 @@ export default function Home() {
             </span>
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-gray-600 dark:text-gray-300">
-            Affordable, verified student freelancers for web design, writing, social media, and more.
-            Find your next collaborator or grow your portfolio.
+            Verified student freelancers for creative projects, tutoring, business support, tech, and more.
+            Find your next collaborator or start earning with your skills.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <Link to="/freelancers" className="btn-primary text-base">Find a Freelancer</Link>
