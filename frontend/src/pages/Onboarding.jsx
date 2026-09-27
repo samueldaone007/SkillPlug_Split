@@ -453,7 +453,7 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-screen bg-[var(--bg)]">
       <div className="mx-auto max-w-2xl px-4 py-12">
         {/* Progress */}
         <div className="mb-8">

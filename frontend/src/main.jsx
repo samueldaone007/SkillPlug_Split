@@ -5,7 +5,10 @@ import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { NotificationsProvider } from './context/NotificationsContext.jsx'
 import { ToastProvider } from './components/Toast.jsx'
+import { initTheme } from './utils/theme'
 import './index.css'
+
+initTheme()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
