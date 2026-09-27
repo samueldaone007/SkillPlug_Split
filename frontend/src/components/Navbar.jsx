@@ -13,23 +13,23 @@ export default function Navbar() {
   const navigate = useNavigate()
 
   const navLinkClass = ({ isActive }) =>
-    `rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+    `rounded-full px-4 py-2 text-sm font-medium transition-colors ${
       isActive
-        ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200'
-        : 'text-gray-600 hover:bg-gray-50 hover:text-primary-600 dark:text-gray-300 dark:hover:bg-gray-800'
+        ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/60 dark:text-primary-200'
+        : 'text-gray-600 hover:bg-gray-100/70 hover:text-primary-600 dark:text-gray-300 dark:hover:bg-gray-800'
     }`
 
   return (
-    <header className="sticky top-0 z-50 border-b border-gray-200 bg-white/90 backdrop-blur dark:border-gray-700 dark:bg-gray-900/90">
+    <header className="sticky top-0 z-50 border-b border-white/40 bg-white/70 backdrop-blur-md dark:border-gray-700/60 dark:bg-gray-950/70">
       <nav className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center gap-8">
             <Link to="/" className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-primary-700 text-lg font-black text-white">
+              <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-gradient-to-br from-primary-500 to-fuchsia-500 text-lg font-black text-white shadow-md shadow-primary-500/30">
                 SP
               </span>
               <span className="hidden text-lg font-bold text-gray-900 dark:text-white sm:block">
-                Skill<span className="text-primary-600">Plug</span>
+                Skill<span className="text-gradient">Plug</span>
               </span>
             </Link>
 

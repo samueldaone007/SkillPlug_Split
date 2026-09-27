@@ -15,7 +15,7 @@ export default function MobileNav() {
   )
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-gray-200 bg-white/95 backdrop-blur dark:border-gray-700 dark:bg-gray-900/95 md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-white/40 bg-white/80 backdrop-blur-md dark:border-gray-700/60 dark:bg-gray-950/80 md:hidden">
       <div className="mx-auto grid max-w-md grid-cols-4">
         <NavLink to="/" end className={({ isActive }) => `${base} ${isActive ? active : inactive}`}>
           <Icon d="M3 12l9-9 9 9M5 10v10a1 1 0 001 1h3a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1h3a1 1 0 001-1V10" />
